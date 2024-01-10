@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "nulic": {
+      "commandName": "Project",
+      "commandLineArgs": "$(SolutionDir)"
+    }
+  }
+}
