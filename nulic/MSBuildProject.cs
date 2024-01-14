@@ -1,11 +1,4 @@
 ﻿using Microsoft.Build.Construction;
-using Microsoft.Build.Evaluation;
-using NuGet.Configuration;
-using NuGet.Packaging;
-using NuGet.Packaging.Core;
-using NuGet.ProjectModel;
-using System.Xml.Linq;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace nulic;
 
@@ -40,7 +33,7 @@ internal class MSBuildProject
     }
     static void LoadFrom(DirectoryInfo dir, IList<MSBuildProject> list)
     {
-        var files = dir.EnumerateFiles("*.sln");
+        var files = dir.EnumerateFiles("*.sln", SearchOption.AllDirectories); // TODO recursive??
 
         if (!files.Any())
             files = dir.EnumerateFiles("*.csproj");

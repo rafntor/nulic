@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "nulic", "nulic\nulic.csproj", "{2D48793F-007F-4793-AE74-048E0175FFC9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "nulic", "nulic\nulic.csproj", "{2D48793F-007F-4793-AE74-048E0175FFC9}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "testprojects", "testprojects", "{6FFB9344-9EC5-46BD-8BA0-CB01C1DA079C}"
 EndProject
@@ -11,13 +11,18 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cpplib_with_nuget", "testpr
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cppapp_no_nuget", "testprojects\cppapp_no_nuget\cppapp_no_nuget.vcxproj", "{AA057B18-E72B-4C15-8DAC-281C0892AD68}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "netlib_with_nuget", "testprojects\netlib_with_nuget\netlib_with_nuget.csproj", "{3714A3F5-D0CE-44DF-B5A7-EF42912B2BF5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "netlib_with_nuget", "testprojects\netlib_with_nuget\netlib_with_nuget.csproj", "{3714A3F5-D0CE-44DF-B5A7-EF42912B2BF5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "netfxlib_with_nuget", "testprojects\netfxlib_with_nuget\netfxlib_with_nuget.csproj", "{2D797F82-2DE3-44C3-A56C-CF6AC201FB3C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "netapp_no_nuget", "testprojects\netapp_no_nuget\netapp_no_nuget.csproj", "{07D7EF7B-64DC-4EA4-899B-F29667313B38}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "netapp_no_nuget", "testprojects\netapp_no_nuget\netapp_no_nuget.csproj", "{07D7EF7B-64DC-4EA4-899B-F29667313B38}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "unit_tests", "testprojects\unit_tests\unit_tests.csproj", "{6507390F-A9ED-4D61-8708-ADB675522E15}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "unit_tests", "testprojects\unit_tests\unit_tests.csproj", "{6507390F-A9ED-4D61-8708-ADB675522E15}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{365BF3B9-352F-41D7-8A8B-30BF5A5F57C1}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

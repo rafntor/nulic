@@ -1,8 +1,7 @@
-﻿using NuGet.Configuration;
+﻿using Newtonsoft.Json;
 using NuGet.Protocol;
-using NuGet.Protocol.Core.Types;
+using Serilog;
 using System.CommandLine;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("unit_tests")]
@@ -11,6 +10,7 @@ namespace nulic;
 
 internal class Program
 {
+    public static HttpClient HttpClient => new();
     static RootCommand CreateApp()
     {
         var path = new Argument<string>("path", () => ".", "[<Solution|Project|Directory>]");
@@ -23,38 +23,60 @@ internal class Program
         rootCommand.AddArgument(path);
         rootCommand.AddOption(fileOption);
 
-        rootCommand.SetHandler((path) =>
+        rootCommand.SetHandler(async (path) =>
         {
-               Process(path);
+            await Process(path);
         },
             path);
 
         return rootCommand;
     }
-    static void Process(string path)
+    static async Task Process(string path)
     {
         var projects = MSBuildProject.LoadFrom(path);
-        Console.WriteLine($"path:{path} - {projects.Count()} projects");
+
+        Log.Information($"Found {projects.Count()} project(s) in {path}.");
 
         foreach (var project in projects)
         {
             var nugets = NugetMetadata.GetFrom(project);
 
-            Console.WriteLine($"project:{project.FilePath} - {nugets.Count()} nugets");
-            foreach (var nuget in nugets)
-                Console.WriteLine($" - {nuget}");
+            Log.Information($"{project.FilePath} --> {nugets.Count()} nugets.");
         }
 
         {
-            var nugets = projects.SelectMany(NugetMetadata.GetFrom).Distinct();
+            var nugets = projects.SelectMany(NugetMetadata.GetFrom).Distinct().ToArray();
 
-            Console.WriteLine($"{nugets.ToJson(Newtonsoft.Json.Formatting.Indented)}");
+            var license_root = new DirectoryInfo(Path.Join(path, "licenses"));
+
+            var tasks = nugets.Select(async nuget => await nuget.DiscoverLicense(license_root));
+
+            try
+            {
+                await Task.WhenAll(tasks);
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "Exception:");
+
+                Environment.Exit(-1);
+            }
+
+            var outfile = Path.Join(license_root.FullName, "licenses.json");
+
+            await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets));
         }
     }
     static async Task Main(string[] args)
     {
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.Console()
+            .CreateLogger();
+
         var app2 = CreateApp();
 
         await app2.InvokeAsync(args);
+
+        Log.Information("Done.");
     }
 }
