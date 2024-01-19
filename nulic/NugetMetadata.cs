@@ -8,6 +8,7 @@ using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
 using Serilog;
 using System.IO.Enumeration;
+using System.Linq;
 
 namespace nulic;
 
@@ -38,7 +39,6 @@ internal class NugetMetadata
     }
     async public Task DiscoverLicense(DirectoryInfo license_root)
     {
-
         //https://learn.microsoft.com/en-us/nuget/reference/nuspec#license
         //https://learn.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 
@@ -55,41 +55,50 @@ internal class NugetMetadata
                 {
                     await CopyEmbeddedLicenseFile(license_data.License, license_root);
 
-                    licenses.Append(license_data.License);
+                    licenses = licenses.Append(license_data.License);
                 }
             }
             else if (license_data.Type == LicenseType.Expression)
             {
                 // download by expression goes to 'license_root' directly (not package-specific folder)
 
-                await DownloadLicenses(_manifest.LicenseMetadata.LicenseExpression, license_root);
+                var exp_licenses = await DownloadLicenses(_manifest.LicenseMetadata.LicenseExpression, license_root);
+
+                licenses = licenses.Union(exp_licenses);
             }
         }
         else // legacy mode 'LicenceUrl' ?
         {
             if (_manifest.LicenseUrl is Uri url)
             {
+                // create initial path to file in package-specific folder ..
                 var dir = license_root.CreateSubdirectory(ToString());
                 var file = new FileInfo(Path.Join(dir.FullName, "license.url.txt"));
-                await LicenseDownload.DownloadFrom(url, file);
+
+                // .. but may be redirected if url is recognized as a standard license
+                var url_license = await LicenseDownload.DownloadFrom(url, file);
+                
+                licenses = licenses.Append(url_license);
             }
         }
 
-
+        // * remove redundant standard-license-files
+        // * detect missing expression(s) from files
+        // * detect missing copyright(s) from files
 
         //        if (license != null && string.IsNullOrEmpty(Copyright))
         //            Copyright = ExtractCopyright(license);
     }
-    async Task DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
+    async Task<IEnumerable<string>> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
     {
-        List<Task> result = new();
+        List<Task<string>> result = new();
 
         license.OnEachLeafNode( // licenses and license-exceptions
             (l) => result.Add(SpdxLookup.DownloadLicense(l.Identifier, destination)),
             (e) => result.Add(SpdxLookup.DownloadLicense(e.Identifier, destination))
             );
 
-        await Task.WhenAll(result);
+        return await Task.WhenAll(result);
     }
     static string? ExtractCopyright(FileInfo fileInfo)
     {
@@ -115,17 +124,19 @@ internal class NugetMetadata
 
         return result;
     }
-    async Task CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
+    async Task<string> CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
     {
         using var source = package.PackageReader.GetStream(packagefile);
 
-        var dest_dir = destination.CreateSubdirectory(Path.Join(ToString(), Path.GetDirectoryName(packagefile)));
-        
-        var filepath = Path.Join(dest_dir.FullName, Path.GetFileName(packagefile));
+        var relative_path = Path.Join(ToString(), packagefile);
 
-        using var dest = File.Create(filepath);
+        var dest_dir = destination.CreateSubdirectory(Path.GetDirectoryName(relative_path)!);
+        
+        using var dest = File.Create(Path.Join(destination.FullName, relative_path));
 
         await source.CopyToAsync(dest);
+
+        return relative_path;
     }
     async Task CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
     {
@@ -149,15 +160,13 @@ internal class NugetMetadata
 
         var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
 
-        string[] candidates = { "license*.*", "thirdpartynotice*.*" };
+        string[] candidates = { "*license*.*", "*thirdpartynotice*.*", "*credit*.*" };
 
         files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
 
         var jobs = files.Select(async f => await CopyEmbeddedLicenseFile(package, f, destination));
 
-        await Task.WhenAll(jobs);
-
-        return files;
+        return await Task.WhenAll(jobs);
     }
 
     public static IEnumerable<NugetMetadata> GetFrom(MSBuildProject project)
@@ -204,8 +213,7 @@ internal class NugetMetadata
             }
             else if (project.IsSdkStyle)
             {
-                Log.Fatal($"'{project_assets}' not found (missing nuget restore?)");
-                Environment.Exit(-1);
+                throw new Exception($"'{project_assets}' not found (missing nuget restore?)");
             }
         }
 

@@ -1,5 +1,6 @@
 ﻿using AngleSharp.Html.Parser;
 using AngleSharp.Io;
+using NuGet.Protocol.Plugins;
 using Serilog;
 using System.ComponentModel;
 using Textify;
@@ -19,7 +20,7 @@ internal class LicenseDownload
         public FileInfo dest;
         public StreamWriter stream = StreamWriter.Null;
     }
-    public static async Task<bool> DownloadFrom(Uri licenseurl, FileInfo dest)
+    public static async Task<string> DownloadFrom(Uri licenseurl, FileInfo dest)
     {
         var download = new Download (licenseurl, dest);
 
@@ -36,18 +37,10 @@ internal class LicenseDownload
                 result = await DownloadFrom(download, rsp);
         }
 
-        if (result != null)
-        {
-            string redirect = result.url != licenseurl ? $" (via {result.url})" : "";
+        if (result is null)
+            throw new Exception($"Download from {licenseurl} failed!");
 
-            Log.Information($"Download from {licenseurl} OK!{redirect}");
-        }
-        else
-        {
-            Log.Error($"Download from {licenseurl} failed!");
-        }
-
-        return result != null;
+        return Path.GetRelativePath(dest.Directory!.Parent!.FullName, result.dest.FullName);
     }
     static async Task<Download?> DownloadFrom(Download download, HttpResponseMessage? rsp)
     {

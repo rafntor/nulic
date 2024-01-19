@@ -5,11 +5,13 @@ namespace nulic;
 
 internal class SpdxLookup
 {
-    public static async Task DownloadLicense(string license, DirectoryInfo destination)
+    public static async Task<string> DownloadLicense(string license, DirectoryInfo destination)
     {
         var url = new Uri($"https://spdx.org/licenses/{license}.json");
 
-        var fpath = Path.Join(destination.FullName, $"{license}.txt");
+        var filename = $"{license}.txt";
+
+        var fpath = Path.Join(destination.FullName, filename);
 
         if (CreateStream(fpath) is StreamWriter sw)
         {
@@ -26,6 +28,8 @@ internal class SpdxLookup
 
             await sw.DisposeAsync();
         }
+
+        return filename;
     }
     static StreamWriter? CreateStream(string filepath)
     {
