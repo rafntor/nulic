@@ -37,35 +37,24 @@ internal class Program
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
 
-        foreach (var project in projects)
-        {
-            var nugets = NugetMetadata.GetFrom(project);
+        var nugets = projects.SelectMany(NugetMetadata.GetFrom).Distinct().ToArray();
 
-            Log.Information($"{project.FilePath} --> {nugets.Count()} nugets.");
+        var license_root = new DirectoryInfo(Path.Join(path, "licenses"));
+
+        try
+        {
+            await NugetMetadata.CollectInformation(nugets, license_root);
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Exception:");
+
+            Environment.Exit(-1);
         }
 
-        {
-            var nugets = projects.SelectMany(NugetMetadata.GetFrom).Distinct().ToArray();
+        var outfile = Path.Join(license_root.FullName, "licenses.json");
 
-            var license_root = new DirectoryInfo(Path.Join(path, "licenses"));
-
-            var tasks = nugets.Select(async nuget => await nuget.DiscoverLicense(license_root));
-
-            try
-            {
-                await Task.WhenAll(tasks);
-            }
-            catch (Exception ex)
-            {
-                Log.Fatal(ex, "Exception:");
-
-                Environment.Exit(-1);
-            }
-
-            var outfile = Path.Join(license_root.FullName, "licenses.json");
-
-            await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets));
-        }
+        await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets));
     }
     static async Task Main(string[] args)
     {

@@ -7,6 +7,7 @@ using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
 using Serilog;
+using System.Globalization;
 using System.IO.Enumeration;
 using System.Linq;
 
@@ -28,6 +29,19 @@ internal class NugetMetadata
     public string? License => _manifest.LicenseMetadata?.License;
     // no more
     public override string ToString() => $"{Id}.{Version}";
+    public static IEnumerable<NugetMetadata> GetFrom(MSBuildProject project)
+    {
+        var ids = GetNugetIdsFrom(project);
+
+        return ids.Select(FromPackageId);
+    }
+    public static async Task CollectInformation(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
+    {
+        var tasks = nugets.Select(async nuget => await nuget.CollectInformation(license_root));
+
+        await Task.WhenAll(tasks);
+    }
+
     NugetMetadata(ManifestMetadata manifest)
     {
         _manifest = manifest;
@@ -37,7 +51,21 @@ internal class NugetMetadata
     {
         _manifest = new() { Id = identity.Id, Version = identity.Version };
     }
-    async public Task DiscoverLicense(DirectoryInfo license_root)
+    async Task CollectInformation(DirectoryInfo license_root)
+    {
+        var licenses = await CollectLicenses(license_root);
+
+        // * remove redundant standard-license-files
+
+        // * detect missing expression(s) from files
+
+        // * detect missing copyright(s) from files
+
+        //        if (license != null && string.IsNullOrEmpty(Copyright))
+        //            Copyright = ExtractCopyright(license);
+
+    }
+    async Task<IEnumerable<string>> CollectLicenses(DirectoryInfo license_root)
     {
         //https://learn.microsoft.com/en-us/nuget/reference/nuspec#license
         //https://learn.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
@@ -82,12 +110,7 @@ internal class NugetMetadata
             }
         }
 
-        // * remove redundant standard-license-files
-        // * detect missing expression(s) from files
-        // * detect missing copyright(s) from files
-
-        //        if (license != null && string.IsNullOrEmpty(Copyright))
-        //            Copyright = ExtractCopyright(license);
+        return licenses;
     }
     async Task<IEnumerable<string>> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
     {
@@ -169,12 +192,6 @@ internal class NugetMetadata
         return await Task.WhenAll(jobs);
     }
 
-    public static IEnumerable<NugetMetadata> GetFrom(MSBuildProject project)
-    {
-        var ids = GetNugetIdsFrom(project);
-
-        return ids.Select(FromPackageId);
-    }
     static NugetMetadata FromPackageId(PackageIdentity identity)
     {
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);

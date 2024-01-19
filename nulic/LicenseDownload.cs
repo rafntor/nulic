@@ -40,6 +40,10 @@ internal class LicenseDownload
         if (result is null)
             throw new Exception($"Download from {licenseurl} failed!");
 
+        string redirect = result.url != licenseurl ? $" (via {result.url})" : "";
+
+        Log.Information($"Download from {licenseurl} OK!{redirect}");
+
         return Path.GetRelativePath(dest.Directory!.Parent!.FullName, result.dest.FullName);
     }
     static async Task<Download?> DownloadFrom(Download download, HttpResponseMessage? rsp)
