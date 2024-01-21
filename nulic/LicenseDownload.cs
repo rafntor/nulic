@@ -20,7 +20,7 @@ internal class LicenseDownload
         public FileInfo dest;
         public StreamWriter stream = StreamWriter.Null;
     }
-    public static async Task<string> DownloadFrom(Uri licenseurl, FileInfo dest)
+    public static async Task<NulicLicense> DownloadFrom(Uri licenseurl, FileInfo dest)
     {
         var download = new Download (licenseurl, dest);
 
@@ -40,13 +40,13 @@ internal class LicenseDownload
         if (result is null)
             throw new Exception($"Download from {licenseurl} failed!");
 
-        string redirect = result.url != licenseurl ? $" (via {result.url})" : "";
+        string redirect = result.LicenseUrl != licenseurl ? $" (via {result.LicenseUrl})" : "";
 
         Log.Information($"Download from {licenseurl} OK!{redirect}");
 
-        return Path.GetRelativePath(dest.Directory!.Parent!.FullName, result.dest.FullName);
+        return result;
     }
-    static async Task<Download?> DownloadFrom(Download download, HttpResponseMessage? rsp)
+    static async Task<NulicLicense?> DownloadFrom(Download download, HttpResponseMessage? rsp)
     {
         Func<Task>? download_task = null;
 
@@ -62,6 +62,12 @@ internal class LicenseDownload
         if (download_task is null)
             return null;
 
+        var result = NulicLicense.FindExisting(download.dest);
+
+        return result ?? await CreateFrom(download, download_task);
+    }
+    static async Task<NulicLicense> CreateFrom(Download download, Func<Task> download_task)
+    {
         if (CreateStream(ref download))
         {
             try
@@ -75,10 +81,14 @@ internal class LicenseDownload
                 throw new Exception($"Download from {download.url} failed", ex);
             }
 
+            var result = await NulicLicense.Create(download.dest, url: download.url, stream: download.stream.BaseStream);
+
             await download.stream.DisposeAsync();
+
+            return result;
         }
 
-        return download;
+        return await NulicLicense.Create(download.dest, url: download.url);
     }
     static bool CreateStream(ref Download download)
     {

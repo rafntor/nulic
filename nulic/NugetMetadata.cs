@@ -7,6 +7,7 @@ using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
 using Serilog;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO.Enumeration;
 using System.Linq;
@@ -27,6 +28,21 @@ internal class NugetMetadata
     // todo - license deep search
     // _manifest.LicenseUrl/_manifest.Repository.Url;
     public string? License => _manifest.LicenseMetadata?.License;
+    string _license_expression = "NOASSERTION"; // https://github.com/spdx/spdx-spec/issues/49
+    public string LicenseExpression => _license_expression; // todo .. from nuliclicense
+    public Uri LicenseUrl
+    {
+        get
+        {
+            if (_manifest.LicenseUrl is Uri uri)
+            {
+                // return uri; // suppress deprecated licenseurl (legacy package?)
+            }
+
+            return new Uri(string.Format(CultureInfo.InvariantCulture, 
+                LicenseMetadata.LicenseServiceLinkTemplate, LicenseExpression));
+        } 
+    }
     // no more
     public override string ToString() => $"{Id}.{Version}";
     public static IEnumerable<NugetMetadata> GetFrom(MSBuildProject project)
@@ -65,13 +81,13 @@ internal class NugetMetadata
         //            Copyright = ExtractCopyright(license);
 
     }
-    async Task<IEnumerable<string>> CollectLicenses(DirectoryInfo license_root)
+    async Task<IEnumerable<NulicLicense>> CollectLicenses(DirectoryInfo license_root)
     {
         //https://learn.microsoft.com/en-us/nuget/reference/nuspec#license
         //https://learn.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 
         // 'licenses' contain the relative filepaths from root of the nuget
-        IEnumerable<string> licenses = await CopyEmbeddedLicenseFiles(license_root);
+        IEnumerable<NulicLicense> licenses = await CopyEmbeddedLicenseFiles(license_root);
 
         var license_data = _manifest.LicenseMetadata;
 
@@ -79,11 +95,11 @@ internal class NugetMetadata
         {
             if (license_data.Type == LicenseType.File)
             {
-                if (!licenses.Contains(license_data.License))
+                if (!licenses.Any(l => l.Filepath.Name == license_data.License))
                 {
-                    await CopyEmbeddedLicenseFile(license_data.License, license_root);
+                    var license = await CopyEmbeddedLicenseFile(license_data.License, license_root);
 
-                    licenses = licenses.Append(license_data.License);
+                    licenses = licenses.Append(license);
                 }
             }
             else if (license_data.Type == LicenseType.Expression)
@@ -112,9 +128,9 @@ internal class NugetMetadata
 
         return licenses;
     }
-    async Task<IEnumerable<string>> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
+    async Task<IEnumerable<NulicLicense>> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
     {
-        List<Task<string>> result = new();
+        List<Task<NulicLicense>> result = new();
 
         license.OnEachLeafNode( // licenses and license-exceptions
             (l) => result.Add(SpdxLookup.DownloadLicense(l.Identifier, destination)),
@@ -147,27 +163,28 @@ internal class NugetMetadata
 
         return result;
     }
-    async Task<string> CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
+    async Task<NulicLicense> CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
     {
         using var source = package.PackageReader.GetStream(packagefile);
 
         var relative_path = Path.Join(ToString(), packagefile);
 
-        var dest_dir = destination.CreateSubdirectory(Path.GetDirectoryName(relative_path)!);
-        
-        using var dest = File.Create(Path.Join(destination.FullName, relative_path));
+        destination.CreateSubdirectory(Path.GetDirectoryName(relative_path)!);
 
-        await source.CopyToAsync(dest);
+        var dest = new FileInfo(Path.Join(destination.FullName, relative_path));
 
-        return relative_path;
+        using (var stream = dest.OpenWrite())
+            await source.CopyToAsync(stream);
+
+        return await NulicLicense.Create(dest, stream:source);
     }
-    async Task CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
+    async Task<NulicLicense> CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
     {
         var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
-        await CopyEmbeddedLicenseFile(package, packagefile, destination);
+        return await CopyEmbeddedLicenseFile(package, packagefile, destination);
     }
     static bool NameMatch(string filepath, string pattern)
     {
@@ -175,7 +192,7 @@ internal class NugetMetadata
 
         return FileSystemName.MatchesSimpleExpression(pattern, file.Name);
     }
-    async Task<IEnumerable<string>> CopyEmbeddedLicenseFiles(DirectoryInfo destination)
+    async Task<IEnumerable<NulicLicense>> CopyEmbeddedLicenseFiles(DirectoryInfo destination)
     {
         var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
 

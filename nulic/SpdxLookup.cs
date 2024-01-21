@@ -1,41 +1,47 @@
 ﻿using Newtonsoft.Json.Linq;
 using NuGet.Protocol;
+using System.ComponentModel.DataAnnotations;
+using System.Net.Http.Headers;
 
 namespace nulic;
 
 internal class SpdxLookup
 {
-    public static async Task<string> DownloadLicense(string license, DirectoryInfo destination)
+    public static async Task<NulicLicense> DownloadLicense(string spdx_id, DirectoryInfo destination)
     {
-        var url = new Uri($"https://spdx.org/licenses/{license}.json");
+        var file = new FileInfo(Path.Join(destination.FullName, $"{spdx_id}.txt"));
 
-        var filename = $"{license}.txt";
+        var result = NulicLicense.FindExisting(file);
 
-        var fpath = Path.Join(destination.FullName, filename);
+        return result ?? await DownloadLicense(file, spdx_id);
+    }
+    static async Task<NulicLicense> DownloadLicense(FileInfo file, string spdx_id)
+    {
+        var url = new Uri($"https://spdx.org/licenses/{spdx_id}.json");
 
-        if (CreateStream(fpath) is StreamWriter sw)
+        if (CreateStream(file) is StreamWriter sw)
         {
             try
             {
-                await FindOrDownloadLicense(license, url, sw);
+                await FindOrDownloadLicense(spdx_id, url, sw);
             }
             catch
             {
                 await sw.DisposeAsync();
-                File.Delete(fpath);
+                file.Delete();
                 throw;
             }
 
             await sw.DisposeAsync();
         }
 
-        return filename;
+        return await NulicLicense.Create(file, spdx_id: spdx_id, url: url);
     }
-    static StreamWriter? CreateStream(string filepath)
+    static StreamWriter? CreateStream(FileInfo filepath)
     {
         try
         {
-            var stream = new FileStream(filepath, FileMode.CreateNew);
+            var stream = new FileStream(filepath.FullName, FileMode.CreateNew);
 
             return new StreamWriter(stream);
         }
@@ -47,12 +53,13 @@ internal class SpdxLookup
             throw;
         }
     }
-    static async Task FindOrDownloadLicense(string license, Uri url, StreamWriter stream)
+    static async Task FindOrDownloadLicense(string spdx_id, Uri url, StreamWriter stream)
     {
         string? license_text;
 
-        if (!CommonLicenses.Licenses.TryGetValue(license, out license_text))
-            license_text = await DownloadSpdxLicense(license);
+        // hmm?
+        if (!CommonLicenses.Licenses.TryGetValue(spdx_id, out license_text))
+            license_text = await DownloadSpdxLicense(spdx_id);
 
         await stream.WriteAsync(license_text);
     }
