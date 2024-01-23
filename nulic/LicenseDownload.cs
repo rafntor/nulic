@@ -48,7 +48,7 @@ internal class LicenseDownload
     }
     static async Task<NulicLicense?> DownloadFrom(Download download, HttpResponseMessage? rsp)
     {
-        Func<Task>? download_task = null;
+        Func<Task<string>>? download_task = null;
 
         if (LookupFileLinkFrom(ref download))
             download_task = () => DownloadFileFrom(download, rsp);
@@ -62,51 +62,7 @@ internal class LicenseDownload
         if (download_task is null)
             return null;
 
-        var result = NulicLicense.FindExisting(download.dest);
-
-        return result ?? await CreateFrom(download, download_task);
-    }
-    static async Task<NulicLicense> CreateFrom(Download download, Func<Task> download_task)
-    {
-        if (CreateStream(ref download))
-        {
-            try
-            {
-                await download_task();
-            }
-            catch (Exception ex)
-            {
-                download.stream.Dispose();
-                download.dest.Delete();
-                throw new Exception($"Download from {download.url} failed", ex);
-            }
-
-            var result = await NulicLicense.Create(download.dest, url: download.url, stream: download.stream.BaseStream);
-
-            await download.stream.DisposeAsync();
-
-            return result;
-        }
-
-        return await NulicLicense.Create(download.dest, url: download.url);
-    }
-    static bool CreateStream(ref Download download)
-    {
-        try
-        {
-            var stream = new FileStream(download.dest.FullName, FileMode.CreateNew);
-
-            download.stream = new StreamWriter(stream);
-
-            return true;
-        }
-        catch (IOException ex)
-        {
-            if (ex.HResult == unchecked((int)0x80070050))
-                return false; // allready exists, return and preoceed
-
-            throw;
-        }
+        return await NulicLicense.FindOrCreate(download_task, download.dest, download.url);
     }
     static bool LookupFileLinkFrom(ref Download download)
     {
@@ -159,27 +115,26 @@ internal class LicenseDownload
 
         if (host == "opensource.org")
         {
-            // redirect to be storage outside package-specific location
-            var rootpath = download.dest.Directory?.Parent?.FullName;
+            // redirect to common storage outside package-specific location
+            var rootpath = download.dest.Directory?.Parent;
+            var packagepath = rootpath?.CreateSubdirectory("opensource.org").FullName;
             var license = Path.GetFileNameWithoutExtension(download.url.AbsolutePath);
-            download.dest = new FileInfo(Path.Join(rootpath, "opensource.org", $"{license}.txt"));
+            download.dest = new FileInfo(Path.Join(packagepath, $"{license}.txt"));
             return "div#LicenseText";
         }
 
         return null;
     }
-    static async Task DownloadFileFrom(Download download, HttpResponseMessage? rsp)
+    static async Task<string> DownloadFileFrom(Download download, HttpResponseMessage? rsp)
     {
         if (rsp is null)
             rsp = await Program.HttpClient.GetAsync(download.url);
 
         rsp.EnsureSuccessStatusCode();
 
-        var text = await rsp.Content.ReadAsStreamAsync();
-
-        await text.CopyToAsync(download.stream.BaseStream);
+        return await rsp.Content.ReadAsStringAsync();
     }
-    static async Task DownloadHtmlElement(Download download, string element, HttpResponseMessage? rsp)
+    static async Task<string> DownloadHtmlElement(Download download, string element, HttpResponseMessage? rsp)
     {
         if (rsp is null)
             rsp = await Program.HttpClient.GetAsync(download.url);
@@ -197,9 +152,9 @@ internal class LicenseDownload
         if (string.IsNullOrEmpty(text))
             throw new Exception($"Lookup '{element}' from {download.url} failed.");
 
-        await download.stream.WriteAsync(text);
+        return text;
     }
-    static async Task DownloadHtmlFlattened(Download download, HttpResponseMessage? rsp)
+    static async Task<string> DownloadHtmlFlattened(Download download, HttpResponseMessage? rsp)
     {
         if (rsp is null)
             rsp = await Program.HttpClient.GetAsync(download.url);
@@ -214,13 +169,11 @@ internal class LicenseDownload
 
         var textify = new HtmlToTextConverter();
 
-        //var xx = doc.Body?.ChildNodes.Where(c=>c.TextContent!=null);
-
         var text = textify.Convert(doc.Body);
 
         if (string.IsNullOrEmpty(text))
             throw new Exception($"Lookup/flatten {download.url} failed.");
 
-        await download.stream.WriteAsync(text);
+        return text;
     }
 }

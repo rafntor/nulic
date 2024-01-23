@@ -11,6 +11,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO.Enumeration;
 using System.Linq;
+using System.Reflection.Metadata.Ecma335;
 
 namespace nulic;
 
@@ -139,44 +140,18 @@ internal class NugetMetadata
 
         return await Task.WhenAll(result);
     }
-    static string? ExtractCopyright(FileInfo fileInfo)
-    {
-        string? result = null;
-
-        foreach (var line in File.ReadLines(fileInfo.FullName))
-        {
-            var idx = line.IndexOf("copyright (c)", StringComparison.OrdinalIgnoreCase);
-
-            if (idx < 0)
-                idx = line.IndexOf("copyright ©", StringComparison.OrdinalIgnoreCase);
-
-            if (idx < 0)
-                continue;
-
-            var copyright = line.Substring(idx);
-
-            if (result is null)
-                result = copyright;
-            else
-                result = string.Join(Environment.NewLine, result, copyright);
-        }
-
-        return result;
-    }
     async Task<NulicLicense> CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
     {
-        using var source = package.PackageReader.GetStream(packagefile);
-
         var relative_path = Path.Join(ToString(), packagefile);
 
         destination.CreateSubdirectory(Path.GetDirectoryName(relative_path)!);
 
         var dest = new FileInfo(Path.Join(destination.FullName, relative_path));
 
-        using (var stream = dest.OpenWrite())
-            await source.CopyToAsync(stream);
+        using var source = await package.PackageReader.GetStreamAsync(packagefile, CancellationToken.None);
+        var text_getter = () => new StreamReader(source).ReadToEndAsync();
 
-        return await NulicLicense.Create(dest, stream:source);
+        return await NulicLicense.FindOrCreate(text_getter, dest);
     }
     async Task<NulicLicense> CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
     {
