@@ -6,12 +6,8 @@ using NuGet.ProjectModel;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
-using Serilog;
-using System.ComponentModel;
 using System.Globalization;
 using System.IO.Enumeration;
-using System.Linq;
-using System.Reflection.Metadata.Ecma335;
 
 namespace nulic;
 
@@ -72,15 +68,7 @@ internal class NugetMetadata
     {
         var licenses = await CollectLicenses(license_root);
 
-        // * remove redundant standard-license-files
-
-        // * detect missing expression(s) from files
-
-        // * detect missing copyright(s) from files
-
-        //        if (license != null && string.IsNullOrEmpty(Copyright))
-        //            Copyright = ExtractCopyright(license);
-
+        // todo; store it .. need to differentiate main-license from the others we may have picked up
     }
     async Task<IEnumerable<NulicLicense>> CollectLicenses(DirectoryInfo license_root)
     {
@@ -175,7 +163,7 @@ internal class NugetMetadata
 
         var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
 
-        string[] candidates = { "*license*.*", "*thirdpartynotice*.*", "*credit*.*" };
+        string[] candidates = { "*license*", "*thirdpartynotice*.*", "*credit*.*" };
 
         files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
 

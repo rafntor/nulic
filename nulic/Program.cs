@@ -1,5 +1,4 @@
 ﻿using Newtonsoft.Json;
-using NuGet.Protocol;
 using Serilog;
 using System.CommandLine;
 using System.Runtime.CompilerServices;
@@ -11,28 +10,41 @@ namespace nulic;
 internal class Program
 {
     public static HttpClient HttpClient => new();
+    static async Task Main(string[] args)
+    {
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.Console()
+            .CreateLogger();
+
+        var app = CreateApp();
+
+        await app.InvokeAsync(args);
+
+        Log.Information("Done.");
+    }
     static RootCommand CreateApp()
     {
-        var path = new Argument<string>("path", () => ".", "[<Solution|Project|Directory>]");
+        var path = new Argument<string>("path", () => ".", "Solution-file, project-file or folder");
+        var settings_folder = new Option<DirectoryInfo>("--settings-folder", () => new DirectoryInfo("settings"), "Use custom settings from settings-folder. Settings can add missing license-information and decide which packages and licenses are included in the output.");
+        var dump_settings = new Option<bool>("--dump-settings", "Dump current settings and exit. Use this to save the built-in settings to use as base for creating customized settings that override the defaults.");
 
-        var fileOption = new Option<FileInfo?>(
-        name: "--file",
-        description: "The file to read and display on the console.");
+        settings_folder.AddAlias("-s");
+        dump_settings.AddAlias("-d");
 
-        var rootCommand = new RootCommand("Sample app for System.CommandLine");
+        var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
+
         rootCommand.AddArgument(path);
-        rootCommand.AddOption(fileOption);
+        rootCommand.AddOption(settings_folder);
+        rootCommand.AddOption(dump_settings);
 
-        rootCommand.SetHandler(async (path) =>
-        {
-            await Process(path);
-        },
-            path);
+        rootCommand.SetHandler(Process, path, settings_folder, dump_settings);
 
         return rootCommand;
     }
-    static async Task Process(string path)
+    static async Task Process(string path, DirectoryInfo settings_folder, bool dump_settings)
     {
+        ProgramSettings.Load(settings_folder, dump_settings);
+
         var projects = MSBuildProject.LoadFrom(path);
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
@@ -55,17 +67,5 @@ internal class Program
         var outfile = Path.Join(license_root.FullName, "licenses.json");
 
         await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets));
-    }
-    static async Task Main(string[] args)
-    {
-        Log.Logger = new LoggerConfiguration()
-            .WriteTo.Console()
-            .CreateLogger();
-
-        var app2 = CreateApp();
-
-        await app2.InvokeAsync(args);
-
-        Log.Information("Done.");
     }
 }

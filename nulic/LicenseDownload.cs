@@ -1,8 +1,5 @@
 ﻿using AngleSharp.Html.Parser;
-using AngleSharp.Io;
-using NuGet.Protocol.Plugins;
 using Serilog;
-using System.ComponentModel;
 using Textify;
 
 namespace nulic;
