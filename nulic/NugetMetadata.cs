@@ -50,9 +50,20 @@ internal class NugetMetadata
     }
     public static async Task CollectInformation(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
     {
+#if true // full async
+
         var tasks = nugets.Select(async nuget => await nuget.CollectInformation(license_root));
 
         await Task.WhenAll(tasks);
+
+#else // sequentially
+
+        foreach (var nuget in nugets)
+        {
+            await nuget.CollectInformation(license_root);
+        }
+
+#endif
     }
 
     NugetMetadata(ManifestMetadata manifest)
@@ -76,43 +87,30 @@ internal class NugetMetadata
         //https://learn.microsoft.com/en-us/nuget/nuget-org/licenses.nuget.org
 
         // 'licenses' contain the relative filepaths from root of the nuget
-        IEnumerable<NulicLicense> licenses = await CopyEmbeddedLicenseFiles(license_root);
+        IEnumerable<NulicLicense> licenses = Enumerable.Empty<NulicLicense>();
 
         var license_data = _manifest.LicenseMetadata;
 
-        if (license_data != null)
+        if (license_data?.Type == LicenseType.Expression)
         {
-            if (license_data.Type == LicenseType.File)
-            {
-                if (!licenses.Any(l => l.Filepath.Name == license_data.License))
-                {
-                    var license = await CopyEmbeddedLicenseFile(license_data.License, license_root);
+            // download by expression goes to 'license_root' directly (not package-specific folder)
 
-                    licenses = licenses.Append(license);
-                }
-            }
-            else if (license_data.Type == LicenseType.Expression)
-            {
-                // download by expression goes to 'license_root' directly (not package-specific folder)
-
-                var exp_licenses = await DownloadLicenses(_manifest.LicenseMetadata.LicenseExpression, license_root);
-
-                licenses = licenses.Union(exp_licenses);
-            }
+            licenses = await DownloadLicenses(license_data.LicenseExpression, license_root);
         }
-        else // legacy mode 'LicenceUrl' ?
+        else if (license_data?.Type == LicenseType.File)
         {
-            if (_manifest.LicenseUrl is Uri url)
-            {
-                // create initial path to file in package-specific folder ..
-                var dir = license_root.CreateSubdirectory(ToString());
-                var file = new FileInfo(Path.Join(dir.FullName, "license.url.txt"));
+            var license = await CopyEmbeddedLicenseFile(license_data.License, license_root);
 
-                // .. but may be redirected if url is recognized as a standard license
-                var url_license = await LicenseDownload.DownloadFrom(url, file);
+            licenses = licenses.Append(license);
+        }
+        else if (_manifest.LicenseUrl is Uri url) // legacy mode 'LicenceUrl' ?
+        {
+            var filename = Path.GetFileNameWithoutExtension(url.AbsolutePath);
+            var file = new FileInfo(Path.Join(license_root.FullName, ToString(), $"{filename}.txt"));
+            // .. but may be redirected if url is recognized as a standard license
+            var url_license = await LicenseDownload.DownloadFrom(url, file);
                 
-                licenses = licenses.Append(url_license);
-            }
+            licenses = licenses.Append(url_license);
         }
 
         return licenses;
@@ -130,11 +128,7 @@ internal class NugetMetadata
     }
     async Task<NulicLicense> CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
     {
-        var relative_path = Path.Join(ToString(), packagefile);
-
-        destination.CreateSubdirectory(Path.GetDirectoryName(relative_path)!);
-
-        var dest = new FileInfo(Path.Join(destination.FullName, relative_path));
+        var dest = new FileInfo(Path.Join(destination.FullName, ToString(), packagefile));
 
         using var source = await package.PackageReader.GetStreamAsync(packagefile, CancellationToken.None);
         var text_getter = () => new StreamReader(source).ReadToEndAsync();

@@ -112,11 +112,10 @@ internal class LicenseDownload
 
         if (host == "opensource.org")
         {
-            // redirect to common storage outside package-specific location
+            // redirect to common storage at root location
             var rootpath = download.dest.Directory?.Parent;
-            var packagepath = rootpath?.CreateSubdirectory("opensource.org").FullName;
             var license = Path.GetFileNameWithoutExtension(download.url.AbsolutePath);
-            download.dest = new FileInfo(Path.Join(packagepath, $"{license}.txt"));
+            download.dest = new FileInfo(Path.Join(rootpath?.FullName, $"opensource.org.{license}.txt"));
             return "div#LicenseText";
         }
 

@@ -53,6 +53,8 @@ internal class NulicLicense
             if (license_text is null)
                 license_text = await text_getter();
 
+            Filepath.Directory?.Create();
+
             using var sw = new StreamWriter(Filepath.OpenWrite());
 
             await sw.WriteAsync(license_text);
