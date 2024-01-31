@@ -51,7 +51,8 @@ internal class Program
 
         var nugets = projects.SelectMany(NugetMetadata.GetFrom).Distinct().ToArray();
 
-        var license_root = new DirectoryInfo(Path.Join(path, "licenses"));
+        string? dir = File.Exists(path) ? Path.GetDirectoryName(path) : path;
+        var license_root = new DirectoryInfo(Path.Join(dir, "licenses"));
 
         try
         {
