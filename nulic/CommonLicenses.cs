@@ -2,6 +2,7 @@
 
 internal class CommonLicenses
 {
+    // ref https://blog.opensource.org/the-most-popular-licenses-for-each-language-2023/
     public static Dictionary<string, string> Licenses => new Dictionary<string, string>
         {
             { "BSD-3-Clause", BSD_3_CLAUSE },

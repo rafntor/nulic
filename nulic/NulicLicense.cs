@@ -1,6 +1,7 @@
 ﻿using F23.StringSimilarity;
 using Serilog;
 using System.Diagnostics;
+using static nulic.LicenseDownload;
 
 namespace nulic;
 
@@ -10,6 +11,7 @@ internal class NulicLicense
     public string SpdxID => _spdx_id ?? "NOASSERTION"; // https://github.com/spdx/spdx-spec/issues/49
     public IEnumerable<string> Copyright { get; private set; } = Enumerable.Empty<string>();
     public readonly Uri? LicenseUrl;
+    public Exception? InitException { get; private set; }
     // private stuff
     string? _spdx_id;
     int _initialized = 0;
@@ -81,18 +83,13 @@ internal class NulicLicense
             }
             catch (Exception ex)
             {
-                Log.Fatal(ex, $"init license failed ({Filepath})");
-
-                _initialized = -1;
+                InitException = ex;
             }
 
             _init_sem.Release(int.MaxValue);
         }
 
         await _init_sem.WaitAsync();
-
-        if (_initialized < 0)
-            throw new Exception($"init license failed ({Filepath})");
     }
     public static async Task<NulicLicense> FindOrCreate(Func<Task<string>> text_getter, FileInfo filepath, Uri? url = null, string? spdx_id = null)
     {

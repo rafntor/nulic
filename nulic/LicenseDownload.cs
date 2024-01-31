@@ -6,6 +6,7 @@ namespace nulic;
 
 internal class LicenseDownload
 {
+    internal class UnknownUrlException : Exception {}
     class Download
     {
         public Download(Uri licenseurl, FileInfo destination)
@@ -33,13 +34,18 @@ internal class LicenseDownload
             if (download.url != licenseurl)
                 result = await DownloadFrom(download, rsp);
         }
-
         if (result is null)
-            throw new Exception($"Download from {licenseurl} failed!");
+        {
+            Func<Task<string>> download_task = () => throw new UnknownUrlException();
 
-        string redirect = result.LicenseUrl != licenseurl ? $" (via {result.LicenseUrl})" : "";
+            result = await NulicLicense.FindOrCreate(download_task, download.dest, download.url);
+        }
+        else
+        {
+            string redirect = result.LicenseUrl != licenseurl ? $" (via {result.LicenseUrl})" : "";
 
-        Log.Information($"Download from {licenseurl} OK!{redirect}");
+            Log.Information($"Download from {licenseurl} OK!{redirect}");
+        }
 
         return result;
     }

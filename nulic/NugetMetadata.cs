@@ -8,6 +8,7 @@ using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
 using System.Globalization;
 using System.IO.Enumeration;
+using Serilog;
 
 namespace nulic;
 
@@ -79,7 +80,21 @@ internal class NugetMetadata
     {
         var licenses = await CollectLicenses(license_root);
 
+        foreach (var license in licenses)
+            LogException(license.InitException, license.LicenseUrl);
+
         // todo; store it .. need to differentiate main-license from the others we may have picked up
+    }
+    void LogException(Exception? ex, Uri? url)
+    {
+        if (ex is HttpRequestException hex)
+            Log.Error($"{ToString()} : Download failed ({hex.StatusCode}) - {url}");
+
+        else if (ex is LicenseDownload.UnknownUrlException)
+            Log.Error($"{ToString()} : Unknown URL (dont know how to download) - {url}");
+
+        else if (ex != null)
+            Log.Fatal(ex, $"{ToString()} : License Init failed ({url})");
     }
     async Task<IEnumerable<NulicLicense>> CollectLicenses(DirectoryInfo license_root)
     {
