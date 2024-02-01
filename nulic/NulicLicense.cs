@@ -8,7 +8,8 @@ namespace nulic;
 internal class NulicLicense
 {
     public FileInfo Filepath { get; private set; }
-    public string SpdxID => _spdx_id ?? "NOASSERTION"; // https://github.com/spdx/spdx-spec/issues/49
+    public const string NOASSERTION = "NOASSERTION"; // https://github.com/spdx/spdx-spec/issues/49
+    public string SpdxID => _spdx_id ?? NOASSERTION;
     public IEnumerable<string> Copyright { get; private set; } = Enumerable.Empty<string>();
     public readonly Uri? LicenseUrl;
     public Exception? InitException { get; private set; }
@@ -35,9 +36,12 @@ internal class NulicLicense
     {
         LicenseUrl = url;
         Filepath = filepath;
+
         lock (_licenses)
             _licenses.Add(this);
-        Log.Information($"created nulic ({filepath})");
+
+        if (filepath != _null_file)
+            Log.Information($"creating ({filepath})");
     }
     async Task InitializeOnce(Func<Task<string>> text_getter)
     {

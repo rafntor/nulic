@@ -6,42 +6,60 @@ using NuGet.ProjectModel;
 using NuGet.Protocol;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
+using Serilog;
 using System.Globalization;
 using System.IO.Enumeration;
-using Serilog;
 
 namespace nulic;
 
 internal class NugetMetadata
 {
     ManifestMetadata _manifest;
-    // following properties are json-exported
+    List<NulicLicense> _licenses = new();
+    //
+    //
+    // *** following properties are json-exported
+    //
     // https://learn.microsoft.com/en-us/nuget/create-packages/package-authoring-best-practices
+    //
+    // *** first the unmodified info from manifest
+    //
     public string Id => _manifest.Id;
     public NuGetVersion Version => _manifest.Version;
     public IEnumerable<string> Authors => _manifest.Authors;
-    // todo - copyrigth from license if empty
-    public string? Copyright { get; private set; }
     public Uri? ProjectUrl => _manifest.ProjectUrl;
-    // todo - license deep search
-    // _manifest.LicenseUrl/_manifest.Repository.Url;
-    public string? License => _manifest.LicenseMetadata?.License;
-    string _license_expression = "NOASSERTION"; // https://github.com/spdx/spdx-spec/issues/49
-    public string LicenseExpression => _license_expression; // todo .. from nuliclicense
+    //
+    // *** next the potentially augmented info from discovery
+    //
+    public string Copyright => _manifest.Copyright ?? string.Join(", ", _licenses.SelectMany(l => l.Copyright).Distinct());
+    public string License
+    {
+        get
+        {
+            if (_manifest.LicenseMetadata?.Type == LicenseType.Expression)
+                return _manifest.LicenseMetadata.License;
+
+            if (_licenses.Any()) // https://spdx.github.io/spdx-spec/v2.3/SPDX-license-expressions/
+                return string.Join(" AND ", _licenses.Select(l => l.SpdxID).Distinct()); // 'AND' is worst-case, so pick that
+
+            return NulicLicense.NOASSERTION;
+        }
+    }
     public Uri LicenseUrl
     {
         get
         {
-            if (_manifest.LicenseUrl is Uri uri)
-            {
-                // return uri; // suppress deprecated licenseurl (legacy package?)
-            }
+            if (_manifest.LicenseUrl is Uri uri && uri != LicenseMetadata.LicenseFileDeprecationUrl)
+                return uri;
 
             return new Uri(string.Format(CultureInfo.InvariantCulture, 
-                LicenseMetadata.LicenseServiceLinkTemplate, LicenseExpression));
+                LicenseMetadata.LicenseServiceLinkTemplate, License));
         } 
     }
-    // no more
+    public IEnumerable<string> LicenseFiles { get; private set; } = Enumerable.Empty<string>();
+    //
+    // *** end of json-properties
+    //
     public override string ToString() => $"{Id}.{Version}";
     public static IEnumerable<NugetMetadata> GetFrom(MSBuildProject project)
     {
@@ -70,7 +88,6 @@ internal class NugetMetadata
     NugetMetadata(ManifestMetadata manifest)
     {
         _manifest = manifest;
-        Copyright = manifest.Copyright;
     }
     NugetMetadata(PackageIdentity identity)
     {
@@ -83,7 +100,9 @@ internal class NugetMetadata
         foreach (var license in licenses)
             LogException(license.InitException, license.LicenseUrl);
 
-        // todo; store it .. need to differentiate main-license from the others we may have picked up
+        _licenses.AddRange(licenses);
+
+        LicenseFiles =  _licenses.Select(l => Path.GetRelativePath(license_root.FullName, l.Filepath.FullName));
     }
     void LogException(Exception? ex, Uri? url)
     {

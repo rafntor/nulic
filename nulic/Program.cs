@@ -67,6 +67,19 @@ internal class Program
 
         var outfile = Path.Join(license_root.FullName, "licenses.json");
 
-        await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets));
+        await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets, Formatting.Indented));
+
+        var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION);
+
+        var nuget_count = nugets.Count();
+        var problem_count = problems.Count();
+
+        Console.WriteLine($"{nugets.Count()} packages has valid license");
+
+        if (problem_count > 0)
+        {
+            Console.WriteLine($"{problem_count} packages has not : ");
+            Console.WriteLine(string.Join(Environment.NewLine, problems));
+        }
     }
 }
