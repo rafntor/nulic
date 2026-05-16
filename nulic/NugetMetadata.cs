@@ -16,6 +16,8 @@ internal class NugetMetadata
 {
     ManifestMetadata _manifest;
     List<NulicLicense> _licenses = new();
+    Uri? _apiLicenseUrl;
+    Uri? _apiProjectUrl;
     //
     //
     // *** following properties are json-exported
@@ -27,7 +29,7 @@ internal class NugetMetadata
     public string Id => _manifest.Id;
     public NuGetVersion Version => _manifest.Version;
     public IEnumerable<string> Authors => _manifest.Authors;
-    public Uri? ProjectUrl => _manifest.ProjectUrl;
+    public Uri? ProjectUrl => _manifest.ProjectUrl ?? _apiProjectUrl;
     //
     // *** next the potentially augmented info from discovery
     //
@@ -52,6 +54,9 @@ internal class NugetMetadata
             if (_manifest.LicenseUrl is Uri uri && uri != LicenseMetadata.LicenseFileDeprecationUrl)
                 return uri;
 
+            if (_apiLicenseUrl is Uri apiUri)
+                return apiUri;
+
             if (License == NulicLicense.NOASSERTION)
                 return null;
 
@@ -64,11 +69,11 @@ internal class NugetMetadata
     // *** end of json-properties
     //
     public override string ToString() => $"{Id}.{Version}";
-    public static IEnumerable<NugetMetadata> GetFrom(MSBuildProject project)
+    public static async Task<IEnumerable<NugetMetadata>> GetFrom(MSBuildProject project)
     {
         var ids = GetNugetIdsFrom(project);
 
-        return ids.Select(FromPackageId);
+        return await Task.WhenAll(ids.Select(FromPackageId));
     }
     public static Task CollectInformation(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
     {
@@ -133,7 +138,7 @@ internal class NugetMetadata
             // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
             licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
         }
-        else if (_manifest.LicenseUrl is Uri url) // legacy mode 'LicenceUrl' ?
+        else if ((_manifest.LicenseUrl ?? _apiLicenseUrl) is Uri url) // legacy mode 'LicenceUrl' ?
         {
             var urlpath = url.AbsolutePath.TrimEnd('/');
             var filename = Path.GetFileNameWithoutExtension(urlpath);
@@ -282,7 +287,7 @@ internal class NugetMetadata
         return Enumerable.Empty<NulicLicense>();
     }
 
-    static NugetMetadata FromPackageId(PackageIdentity identity)
+    static async Task<NugetMetadata> FromPackageId(PackageIdentity identity)
     {
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
@@ -293,7 +298,60 @@ internal class NugetMetadata
             return new NugetMetadata(manifest.Metadata);
         }
 
-        return new NugetMetadata(identity);
+        // Package not in local cache — try NuGet API
+        var meta = await TryFetchFromNuGetApi(identity);
+        return meta ?? new NugetMetadata(identity);
+    }
+
+    static async Task<NugetMetadata?> TryFetchFromNuGetApi(PackageIdentity identity)
+    {
+        var id = Uri.EscapeDataString(identity.Id.ToLowerInvariant());
+        var version = Uri.EscapeDataString(identity.Version.ToNormalizedString().ToLowerInvariant());
+        var url = $"https://api.nuget.org/v3/registration5-gz-semver2/{id}/{version}.json";
+
+        try
+        {
+            using var rsp = await Program.HttpClient.GetAsync(url);
+
+            if (!rsp.IsSuccessStatusCode)
+                return null;
+
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(await rsp.Content.ReadAsStreamAsync());
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("catalogEntry", out var entry))
+                return null;
+
+            var stub = new NugetMetadata(identity);
+
+            if (entry.TryGetProperty("licenseExpression", out var exprEl) &&
+                exprEl.GetString() is { Length: > 0 } expr)
+            {
+                stub._manifest.LicenseMetadata = new LicenseMetadata(
+                    LicenseType.Expression, expr,
+                    NuGetLicenseExpression.Parse(expr), null, LicenseMetadata.EmptyVersion);
+            }
+
+            if (entry.TryGetProperty("licenseUrl", out var urlEl) &&
+                urlEl.GetString() is { Length: > 0 } licUrl &&
+                stub._manifest.LicenseMetadata is null)
+            {
+                stub._apiLicenseUrl = new Uri(licUrl);
+            }
+
+            if (entry.TryGetProperty("projectUrl", out var projEl) &&
+                projEl.GetString() is { Length: > 0 } projUrl &&
+                stub._manifest.ProjectUrl is null)
+            {
+                stub._apiProjectUrl = new Uri(projUrl);
+            }
+
+            return stub;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     static IEnumerable<PackageIdentity> GetNugetIdsFrom(MSBuildProject project)
