@@ -9,7 +9,7 @@ namespace nulic;
 
 internal class Program
 {
-    public static HttpClient HttpClient => new();
+    public static readonly HttpClient HttpClient = new();
     static async Task Main(string[] args)
     {
         Log.Logger = new LoggerConfiguration()
