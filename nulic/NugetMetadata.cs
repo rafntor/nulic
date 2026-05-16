@@ -122,9 +122,13 @@ internal class NugetMetadata
 
         if (license_data?.Type == LicenseType.Expression)
         {
-            // download by expression goes to 'license_root' directly (not package-specific folder)
+            // When a package declares an SPDX expression, prefer any embedded license file
+            // (more authentic, may include project-specific wording) over the canonical spdx.org text.
+            var embedded = await CopyEmbeddedLicenseFiles(license_root, licenseOnly: true);
 
-            licenses = await DownloadLicenses(license_data.LicenseExpression, license_root);
+            licenses = embedded.Any()
+                ? embedded
+                : await DownloadLicenses(license_data.LicenseExpression, license_root);
 
             // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
             licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
@@ -222,7 +226,7 @@ internal class NugetMetadata
 
         return await Task.WhenAll(jobs);
     }
-    async Task<IEnumerable<NulicLicense>> CopyEmbeddedLicenseFiles(DirectoryInfo destination)
+    async Task<IEnumerable<NulicLicense>> CopyEmbeddedLicenseFiles(DirectoryInfo destination, bool licenseOnly = false)
     {
         var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
 
@@ -236,7 +240,9 @@ internal class NugetMetadata
 
         var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
 
-        string[] candidates = { "*license*", "*thirdpartynotice*.*", "*credit*.*" };
+        string[] candidates = licenseOnly
+            ? new[] { "*license*" }
+            : new[] { "*license*", "*thirdpartynotice*.*", "*credit*.*" };
 
         files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
 
