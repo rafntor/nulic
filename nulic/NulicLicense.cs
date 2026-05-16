@@ -1,6 +1,5 @@
 ﻿using F23.StringSimilarity;
 using Serilog;
-using System.Diagnostics;
 using static nulic.LicenseDownload;
 
 namespace nulic;
@@ -13,32 +12,33 @@ internal class NulicLicense
     public IEnumerable<string> Copyright { get; private set; } = Enumerable.Empty<string>();
     public readonly Uri? LicenseUrl;
     public Exception? InitException { get; private set; }
-    // private stuff
+    // private instance state
     string? _spdx_id;
-    int _initialized = 0;
-    SemaphoreSlim _init_sem = new(0);
+    readonly object _initLock = new();
+    Task? _initTask;
     IDictionary<string, int>? _profile;
-    static List<NulicLicense> _licenses = new();
-    static Cosine _strcmp = new Cosine();
-    static readonly FileInfo _null_file = new (OperatingSystem.IsWindows() ? "nul" : "/dev/null");
+    // static registry — dictionaries for O(1) lookup
+    static readonly object _lock = new();
+    static readonly Dictionary<string, NulicLicense> _byPath = new(StringComparer.OrdinalIgnoreCase);
+    static readonly Dictionary<string, NulicLicense> _bySpdxId = new(StringComparer.Ordinal);
+    static readonly Cosine _strcmp = new();
+    static readonly FileInfo _null_file = new(OperatingSystem.IsWindows() ? "nul" : "/dev/null");
     static NulicLicense()
     {
         foreach (var license in CommonLicenses.Licenses)
         {
-            new NulicLicense(_null_file)
+            var nl = new NulicLicense(_null_file)
             {
                 _spdx_id = license.Key,
                 _profile = _strcmp.GetProfile(license.Value),
             };
+            _bySpdxId[license.Key] = nl;
         }
     }
     NulicLicense(FileInfo filepath, Uri? url = null)
     {
         LicenseUrl = url;
         Filepath = filepath;
-
-        lock (_licenses)
-            _licenses.Add(this);
 
         if (filepath != _null_file)
             Log.Information($"creating ({filepath})");
@@ -77,37 +77,48 @@ internal class NulicLicense
             Copyright = LicenseAnalysis.LookupCopyrights(new StringReader(license_text));
         }
     }
-    async Task Initialize(Func<Task<string>> text_getter)
+    Task Initialize(Func<Task<string>> text_getter)
     {
-        if (Interlocked.CompareExchange(ref _initialized, 1, 0) == 0)
+        lock (_initLock)
+            _initTask ??= RunInitOnce(text_getter);
+        return _initTask!;
+    }
+    async Task RunInitOnce(Func<Task<string>> text_getter)
+    {
+        try
         {
-            try
-            {
-                await InitializeOnce(text_getter);
-            }
-            catch (Exception ex)
-            {
-                InitException = ex;
-            }
-
-            _init_sem.Release(int.MaxValue);
+            await InitializeOnce(text_getter);
         }
-
-        await _init_sem.WaitAsync();
+        catch (Exception ex)
+        {
+            InitException = ex;
+        }
     }
     public static async Task<NulicLicense> FindOrCreate(Func<Task<string>> text_getter, FileInfo filepath, Uri? url = null, string? spdx_id = null)
     {
-        NulicLicense? result = null;
+        NulicLicense? result;
 
-        lock (_licenses)
+        lock (_lock)
         {
-            result = FindExisting(filepath);
-
-            if (result is null)
-                result = PromoteExisting(spdx_id, filepath);
-
-            if (result is null)
-                result = new NulicLicense(filepath, url); // from now can be found by other tasks!
+            if (!_byPath.TryGetValue(filepath.FullName, out result))
+            {
+                if (spdx_id != null && _bySpdxId.TryGetValue(spdx_id, out result) && result.Filepath == _null_file)
+                {
+                    // Promote CommonLicense stub to a real file path
+                    result.Filepath = filepath;
+                    _byPath[filepath.FullName] = result;
+                }
+                else
+                {
+                    result = new NulicLicense(filepath, url);
+                    if (spdx_id != null)
+                    {
+                        result._spdx_id = spdx_id;
+                        _bySpdxId[spdx_id] = result;
+                    }
+                    _byPath[filepath.FullName] = result;
+                }
+            }
         }
 
         await result.Initialize(text_getter);
@@ -116,12 +127,12 @@ internal class NulicLicense
     }
     static string? LookupSpdxID(IDictionary<string, int> profile)
     {
-        lock (_licenses)
+        lock (_lock)
         {
-            foreach (var license in _licenses.Where(l => l._profile != null && l._spdx_id != null))
+            foreach (var license in _bySpdxId.Values)
             {
+                if (license._profile is null) continue;
                 var similarity = _strcmp.Similarity(profile, license._profile);
-
                 if (similarity > 0.9)
                     return license._spdx_id;
             }
@@ -129,23 +140,21 @@ internal class NulicLicense
 
         return null;
     }
-    static NulicLicense? FindExisting(FileInfo filepath)
+    internal static void Reset()
     {
-        var license = _licenses.Find(l => l.Filepath.FullName == filepath.FullName);
-
-        return license;
-    }
-    static NulicLicense? PromoteExisting(string? spdx_id, FileInfo filepath)
-    {
-        var license = _licenses.Find(l => l.SpdxID == spdx_id);
-
-        if (license != null)
+        lock (_lock)
         {
-            Debug.Assert(license.Filepath == _null_file); // promote only once!
-
-            license.Filepath = filepath; // from here on it may be found by findexisting ; also by other tasks
+            _byPath.Clear();
+            _bySpdxId.Clear();
+            foreach (var license in CommonLicenses.Licenses)
+            {
+                var nl = new NulicLicense(_null_file)
+                {
+                    _spdx_id = license.Key,
+                    _profile = _strcmp.GetProfile(license.Value),
+                };
+                _bySpdxId[license.Key] = nl;
+            }
         }
-
-        return license;
     }
 }
