@@ -1,7 +1,9 @@
-﻿using Newtonsoft.Json;
-using Serilog;
+﻿using Serilog;
 using System.CommandLine;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using NuGet.Versioning;
 
 [assembly: InternalsVisibleTo("unit_tests")]
 
@@ -10,6 +12,12 @@ namespace nulic;
 internal class Program
 {
     public static readonly HttpClient HttpClient = new();
+
+    static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        WriteIndented = true,
+        Converters = { new NuGetVersionConverter(), new UriConverter() }
+    };
     static async Task Main(string[] args)
     {
         Log.Logger = new LoggerConfiguration()
@@ -82,7 +90,7 @@ internal class Program
 
         var outfile = Path.Join(license_root.FullName, "licenses.json");
 
-        await File.WriteAllTextAsync(outfile, JsonConvert.SerializeObject(nugets, Formatting.Indented));
+        await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
 
         var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION);
 
@@ -96,5 +104,21 @@ internal class Program
             Console.WriteLine($"{problem_count} packages has not : ");
             Console.WriteLine(string.Join(Environment.NewLine, problems));
         }
+    }
+
+    class NuGetVersionConverter : JsonConverter<NuGetVersion>
+    {
+        public override NuGetVersion Read(ref Utf8JsonReader r, Type t, JsonSerializerOptions o)
+            => NuGetVersion.Parse(r.GetString()!);
+        public override void Write(Utf8JsonWriter w, NuGetVersion v, JsonSerializerOptions o)
+            => w.WriteStringValue(v.ToString());
+    }
+
+    class UriConverter : JsonConverter<Uri>
+    {
+        public override Uri? Read(ref Utf8JsonReader r, Type t, JsonSerializerOptions o)
+            => r.GetString() is string s ? new Uri(s) : null;
+        public override void Write(Utf8JsonWriter w, Uri v, JsonSerializerOptions o)
+            => w.WriteStringValue(v.ToString());
     }
 }

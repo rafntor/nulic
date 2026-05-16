@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+﻿using System.Text.Json;
 
 namespace nulic;
 
@@ -21,7 +21,7 @@ internal class ProgramSettings
 
         if (dump_settings)
         {
-            Console.Write(JsonConvert.SerializeObject(Settings, Formatting.Indented));
+            Console.Write(JsonSerializer.Serialize(Settings, new JsonSerializerOptions { WriteIndented = true }));
 
             Environment.Exit(0);
         }

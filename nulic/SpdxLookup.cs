@@ -1,5 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
-using NuGet.Protocol;
+﻿using System.Text.Json;
 
 namespace nulic;
 
@@ -24,14 +23,14 @@ internal class SpdxLookup
     {
         var url = new Uri($"https://spdx.org/licenses/{spdx_id}.json");
 
-        var reply = await Program.HttpClient.GetStringAsync(url);
+        var json = await Program.HttpClient.GetStringAsync(url);
 
-        var jsonobj = (JObject) reply.FromJson(typeof(object));
+        using var doc = JsonDocument.Parse(json);
 
-        if (jsonobj["licenseText"] is JToken tok)
-            if (tok.ToObject(typeof(string)) is string text && text.Length > 0)
-                return text;
+        if (doc.RootElement.TryGetProperty("licenseText", out var tok) &&
+            tok.GetString() is { Length: > 0 } text)
+            return text;
 
-        throw new Newtonsoft.Json.JsonException($"SpdxLookup: Failed to extract 'licenseText'.");
+        throw new JsonException($"SpdxLookup: Failed to extract 'licenseText'.");
     }
 }
