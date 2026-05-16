@@ -72,7 +72,7 @@ internal class NulicLicense
 
         if (_spdx_id is null)
         {
-            _spdx_id = LookupSpdxID(_profile);
+            _spdx_id = LookupSpdxID(_profile) ?? LookupSpdxIDByKeywords(license_text);
 
             Copyright = LookupCopyrights(new StringReader(license_text));
         }
@@ -113,6 +113,72 @@ internal class NulicLicense
         await result.Initialize(text_getter);
 
         return result;
+    }
+    static string? LookupSpdxIDByKeywords(string text)
+    {
+        // Handles short reference texts and multi-license bundle files where cosine similarity fails.
+        // Collects ALL licenses present and returns a composite SPDX expression.
+        bool has(string s) => text.Contains(s, StringComparison.OrdinalIgnoreCase);
+
+        var found = new HashSet<string>(StringComparer.Ordinal);
+
+        if (has("GNU Affero General Public License"))
+            found.Add("AGPL-3.0-only");
+
+        if (has("GNU Lesser General Public License"))
+            found.Add(has("version 3") || has("LGPL-3") ? "LGPL-3.0-only" : "LGPL-2.1-only");
+
+        if (has("GNU General Public License"))
+            found.Add(has("version 3") || has("GPL-3") ? "GPL-3.0-only" : "GPL-2.0-only");
+
+        if (has("Apache License") && has("2.0"))
+            found.Add("Apache-2.0");
+
+        if (has("Permission is hereby granted, free of charge") && has("above copyright notice and this permission notice"))
+            found.Add("MIT");
+
+        if (has("Redistribution and use in source and binary forms"))
+            found.Add(has("Neither the name of") ? "BSD-3-Clause" : "BSD-2-Clause");
+
+        if (has("Mozilla Public License") && has("2.0"))
+            found.Add("MPL-2.0");
+
+        if (has("Eclipse Public License"))
+            found.Add(has("2.0") ? "EPL-2.0" : "EPL-1.0");
+
+        if (has("ISC License") || (has("Permission to use, copy, modify") && has("ISC")))
+            found.Add("ISC");
+
+        if (has("OpenSSL") && has("free for commercial and non-commercial use"))
+            found.Add("OpenSSL");
+
+        if (has("Microsoft Public License") || has("MS-PL"))
+            found.Add("MS-PL");
+
+        if (has("This is free and unencumbered software released into the public domain"))
+            found.Add("Unlicense");
+
+        if (found.Count == 0) return null;
+
+        // Exceptions are only meaningful on a single GPL base license
+        if (found.Count == 1 && (found.Contains("GPL-2.0-only") || found.Contains("GPL-3.0-only")))
+        {
+            var ex = DetectSpdxException(text);
+            if (ex != null) return $"{found.First()} WITH {ex}";
+        }
+
+        return string.Join(" AND ", found.OrderBy(x => x));
+    }
+    static string? DetectSpdxException(string text)
+    {
+        bool has(string s) => text.Contains(s, StringComparison.OrdinalIgnoreCase);
+
+        if (has("Classpath") && has("special exception"))
+            return "Classpath-exception-2.0";
+        if (has("special exception") && (has("instantiate") || has("inline functions") || has("link it with")))
+            return "LicenseRef-linking-exception";
+
+        return null;
     }
     static string? LookupSpdxID(IDictionary<string, int> profile)
     {
