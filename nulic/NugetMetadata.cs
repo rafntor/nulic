@@ -28,7 +28,7 @@ internal class NugetMetadata
     //
     public string Id => _manifest.Id;
     public NuGetVersion Version => _manifest.Version;
-    public IEnumerable<string> Authors => [string.Join(", ", _manifest.Authors.Select(a => a.Trim()))];
+    public IEnumerable<string> Authors => _manifest.Authors;
     public Uri? ProjectUrl => _manifest.ProjectUrl ?? _apiProjectUrl;
     //
     // *** next the potentially augmented info from discovery
