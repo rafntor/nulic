@@ -32,7 +32,13 @@ internal class LicenseDownload
                 download.url = url;
 
             if (download.url != licenseurl)
+            {
+                var redirectFilename = Path.GetFileName(download.url.AbsolutePath);
+                if (!string.IsNullOrEmpty(redirectFilename))
+                    download.dest = new FileInfo(Path.Join(download.dest.DirectoryName, redirectFilename));
+
                 result = await DownloadFrom(download, rsp);
+            }
         }
         if (result is null)
         {
@@ -52,10 +58,13 @@ internal class LicenseDownload
     static async Task<NulicLicense?> DownloadFrom(Download download, HttpResponseMessage? rsp)
     {
         Func<Task<string>>? download_task = null;
+        var urlBefore = download.url;
 
         if (LookupFileLinkFrom(ref download))
+        {
+            if (download.url != urlBefore) rsp = null; // URL was transformed, discard stale response
             download_task = () => DownloadFileFrom(download, rsp);
-
+        }
         else if (LookupHtmlElementFrom(ref download) is string element)
             download_task = () => DownloadHtmlElement(download, element, rsp);
 
@@ -90,6 +99,10 @@ internal class LicenseDownload
         {
             throw new Exception("todo ...");
         }
+
+        var ext = Path.GetExtension(download.url.AbsolutePath).ToLowerInvariant();
+        if (ext is ".rtf" or ".txt" or ".md")
+            return true;
 
         return false;
     }
