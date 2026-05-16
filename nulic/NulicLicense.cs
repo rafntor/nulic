@@ -12,6 +12,12 @@ internal class NulicLicense
     public IEnumerable<string> Copyright { get; private set; } = Enumerable.Empty<string>();
     public readonly Uri? LicenseUrl;
     public Exception? InitException { get; private set; }
+    public bool IsNotFound => ReferenceEquals(this, _not_found);
+
+    static readonly FileInfo _null_file = new(OperatingSystem.IsWindows() ? "nul" : "/dev/null");
+    // Sentinel returned when the package is not in the local cache — no license, no error logged
+    static readonly NulicLicense _not_found = new(_null_file);
+    public static NulicLicense NotFound => _not_found;
     // private instance state
     string? _spdx_id;
     readonly object _initLock = new();
@@ -22,7 +28,6 @@ internal class NulicLicense
     static readonly Dictionary<string, NulicLicense> _byPath = new(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, NulicLicense> _bySpdxId = new(StringComparer.Ordinal);
     static readonly Cosine _strcmp = new();
-    static readonly FileInfo _null_file = new(OperatingSystem.IsWindows() ? "nul" : "/dev/null");
     static NulicLicense()
     {
         foreach (var license in CommonLicenses.Licenses)

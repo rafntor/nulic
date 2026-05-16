@@ -90,9 +90,9 @@ internal class NugetMetadata
         foreach (var license in licenses)
             LogException(license.InitException, license.LicenseUrl);
 
-        _licenses.AddRange(licenses);
+        _licenses.AddRange(licenses.Where(l => !l.IsNotFound));
 
-        LicenseFiles =  _licenses.Select(l => Path.GetRelativePath(license_root.FullName, l.Filepath.FullName));
+        LicenseFiles = _licenses.Select(l => Path.GetRelativePath(license_root.FullName, l.Filepath.FullName));
     }
     void LogException(Exception? ex, Uri? url)
     {
@@ -173,6 +173,12 @@ internal class NugetMetadata
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
+        if (package is null)
+        {
+            Log.Warning($"{this} : package not found in local cache, cannot copy embedded license file '{packagefile}'");
+            return Task.FromResult(NulicLicense.NotFound);
+        }
+
         return CopyEmbeddedLicenseFile(package, packagefile, destination);
     }
     static bool NameMatch(string filepath, string pattern)
@@ -186,6 +192,12 @@ internal class NugetMetadata
         var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
+
+        if (package is null)
+        {
+            Log.Warning($"{this} : package not found in local cache, skipping embedded file scan");
+            return Enumerable.Empty<NulicLicense>();
+        }
 
         var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
 
