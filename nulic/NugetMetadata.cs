@@ -139,12 +139,20 @@ internal class NugetMetadata
         }
         else if (_manifest.LicenseUrl is Uri url) // legacy mode 'LicenceUrl' ?
         {
-            var filename = Path.GetFileNameWithoutExtension(url.AbsolutePath);
-            var file = new FileInfo(Path.Join(license_root.FullName, ToString(), $"{filename}.txt"));
+            var urlpath = url.AbsolutePath.TrimEnd('/');
+            var filename = Path.GetFileNameWithoutExtension(urlpath);
+            if (string.IsNullOrEmpty(filename)) filename = "license";
+            var ext = Path.GetExtension(urlpath) is { Length: > 0 } e ? e : ".txt";
+            var file = new FileInfo(Path.Join(license_root.FullName, ToString(), $"{filename}{ext}"));
             // .. but may be redirected if url is recognized as a standard license
             var url_license = await LicenseDownload.DownloadFrom(url, file);
                 
             licenses = licenses.Append(url_license);
+        }
+
+        if (!licenses.Any()) // fallback: scan package for undeclared license files
+        {
+            licenses = await CopyEmbeddedLicenseFiles(license_root);
         }
 
         return licenses;
