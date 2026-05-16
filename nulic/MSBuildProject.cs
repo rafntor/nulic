@@ -33,16 +33,12 @@ internal class MSBuildProject
     }
     static void LoadFrom(DirectoryInfo dir, IList<MSBuildProject> list)
     {
-        var files = dir.EnumerateFiles("*.sln", SearchOption.AllDirectories); // TODO recursive??
+        var files = dir.EnumerateFiles("*.sln", SearchOption.TopDirectoryOnly).ToList();
 
-        if (!files.Any())
-            files = dir.EnumerateFiles("*.csproj");
-        if (!files.Any())
-            files = dir.EnumerateFiles("*.vbproj");
-        if (!files.Any())
-            files = dir.EnumerateFiles("*.fsproj");
-        if (!files.Any())
-            files = dir.EnumerateFiles("*.vcxproj");
+        if (files.Count == 0) files = dir.EnumerateFiles("*.csproj").ToList();
+        if (files.Count == 0) files = dir.EnumerateFiles("*.vbproj").ToList();
+        if (files.Count == 0) files = dir.EnumerateFiles("*.fsproj").ToList();
+        if (files.Count == 0) files = dir.EnumerateFiles("*.vcxproj").ToList();
 
         LoadFrom(files, list);
     }
