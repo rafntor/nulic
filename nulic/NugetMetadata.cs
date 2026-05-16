@@ -120,12 +120,18 @@ internal class NugetMetadata
             // download by expression goes to 'license_root' directly (not package-specific folder)
 
             licenses = await DownloadLicenses(license_data.LicenseExpression, license_root);
+
+            // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
+            licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
         }
         else if (license_data?.Type == LicenseType.File)
         {
             var license = await CopyEmbeddedLicenseFile(license_data.License, license_root);
 
             licenses = licenses.Append(license);
+
+            // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
+            licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
         }
         else if (_manifest.LicenseUrl is Uri url) // legacy mode 'LicenceUrl' ?
         {
@@ -186,6 +192,25 @@ internal class NugetMetadata
         var file = new FileInfo(filepath);
 
         return FileSystemName.MatchesSimpleExpression(pattern, file.Name);
+    }
+    async Task<IEnumerable<NulicLicense>> CopySupplementaryFiles(DirectoryInfo destination)
+    {
+        var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
+
+        var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
+
+        if (package is null)
+            return Enumerable.Empty<NulicLicense>();
+
+        var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
+
+        string[] candidates = { "*thirdpartynotice*.*", "*notice*.*", "*credit*.*" };
+
+        files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
+
+        var jobs = files.Select(f => CopyEmbeddedLicenseFile(package, f, destination));
+
+        return await Task.WhenAll(jobs);
     }
     async Task<IEnumerable<NulicLicense>> CopyEmbeddedLicenseFiles(DirectoryInfo destination)
     {
