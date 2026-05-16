@@ -151,6 +151,11 @@ internal class NugetMetadata
             licenses = await CopyEmbeddedLicenseFiles(license_root);
         }
 
+        if (!licenses.Any()) // last resort: try GitHub LICENSE file from ProjectUrl
+        {
+            licenses = await TryDownloadFromProjectUrl(license_root);
+        }
+
         return licenses;
     }
     Task<NulicLicense[]> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
@@ -233,6 +238,48 @@ internal class NugetMetadata
         var jobs = files.Select(f => CopyEmbeddedLicenseFile(package, f, destination));
 
         return await Task.WhenAll(jobs);
+    }
+    async Task<IEnumerable<NulicLicense>> TryDownloadFromProjectUrl(DirectoryInfo license_root)
+    {
+        if (_manifest.ProjectUrl is not Uri projectUrl)
+            return Enumerable.Empty<NulicLicense>();
+
+        var host = projectUrl.Host;
+        if (host.StartsWith("www.")) host = host[4..];
+
+        if (host != "github.com")
+            return Enumerable.Empty<NulicLicense>();
+
+        // Try common default branch names and common license filenames
+        var repo = projectUrl.AbsolutePath.TrimEnd('/');
+        string[] branches = { "main", "master" };
+        string[] filenames = { "LICENSE", "LICENSE.txt", "LICENSE.md", "COPYING" };
+
+        foreach (var branch in branches)
+        {
+            foreach (var filename in filenames)
+            {
+                var rawUrl = new Uri($"https://raw.githubusercontent.com{repo}/{branch}/{filename}");
+                var dest = new FileInfo(Path.Join(license_root.FullName, ToString(), filename));
+
+                try
+                {
+                    var rsp = await Program.HttpClient.GetAsync(rawUrl);
+
+                    if (!rsp.IsSuccessStatusCode)
+                        continue;
+
+                    var text_getter = () => rsp.Content.ReadAsStringAsync();
+                    var license = await NulicLicense.FindOrCreate(text_getter, dest, rawUrl);
+
+                    if (!license.IsNotFound)
+                        return [license];
+                }
+                catch { /* try next */ }
+            }
+        }
+
+        return Enumerable.Empty<NulicLicense>();
     }
 
     static NugetMetadata FromPackageId(PackageIdentity identity)
