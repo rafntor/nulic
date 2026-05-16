@@ -67,22 +67,9 @@ internal class NugetMetadata
 
         return ids.Select(FromPackageId);
     }
-    public static async Task CollectInformation(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
+    public static Task CollectInformation(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
     {
-#if true // full async
-
-        var tasks = nugets.Select(async nuget => await nuget.CollectInformation(license_root));
-
-        await Task.WhenAll(tasks);
-
-#else // sequentially
-
-        foreach (var nuget in nugets)
-        {
-            await nuget.CollectInformation(license_root);
-        }
-
-#endif
+        return Task.WhenAll(nugets.Select(nuget => nuget.CollectInformation(license_root)));
     }
 
     NugetMetadata(ManifestMetadata manifest)
@@ -157,7 +144,7 @@ internal class NugetMetadata
 
         return licenses;
     }
-    async Task<IEnumerable<NulicLicense>> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
+    Task<NulicLicense[]> DownloadLicenses(NuGetLicenseExpression license, DirectoryInfo destination)
     {
         List<Task<NulicLicense>> result = new();
 
@@ -166,7 +153,7 @@ internal class NugetMetadata
             (e) => result.Add(SpdxLookup.DownloadLicense(e.Identifier, destination))
             );
 
-        return await Task.WhenAll(result);
+        return Task.WhenAll(result);
     }
     async Task<NulicLicense> CopyEmbeddedLicenseFile(DownloadResourceResult package, string packagefile, DirectoryInfo destination)
     {
@@ -177,13 +164,13 @@ internal class NugetMetadata
 
         return await NulicLicense.FindOrCreate(text_getter, dest);
     }
-    async Task<NulicLicense> CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
+    Task<NulicLicense> CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
     {
         var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
-        return await CopyEmbeddedLicenseFile(package, packagefile, destination);
+        return CopyEmbeddedLicenseFile(package, packagefile, destination);
     }
     static bool NameMatch(string filepath, string pattern)
     {
@@ -203,7 +190,7 @@ internal class NugetMetadata
 
         files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
 
-        var jobs = files.Select(async f => await CopyEmbeddedLicenseFile(package, f, destination));
+        var jobs = files.Select(f => CopyEmbeddedLicenseFile(package, f, destination));
 
         return await Task.WhenAll(jobs);
     }
