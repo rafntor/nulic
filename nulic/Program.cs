@@ -16,6 +16,7 @@ internal class Program
     static readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new NuGetVersionConverter(), new UriConverter() }
     };
     static async Task Main(string[] args)
