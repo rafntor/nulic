@@ -64,7 +64,7 @@ internal class Program
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
 
-        var nugets = projects.SelectMany(NugetMetadata.GetFrom).Distinct().ToArray();
+        var nugets = projects.SelectMany(NugetMetadata.GetFrom).DistinctBy(n => (n.Id, n.Version)).ToArray();
 
         string? dir = File.Exists(path) ? Path.GetDirectoryName(path) : path;
         var license_root = new DirectoryInfo(Path.Join(dir, "licenses"));
