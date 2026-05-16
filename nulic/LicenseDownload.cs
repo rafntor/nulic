@@ -7,20 +7,14 @@ namespace nulic;
 internal class LicenseDownload
 {
     internal class UnknownUrlException : Exception {}
-    class Download
+    class Download(Uri licenseurl, FileInfo destination)
     {
-        public Download(Uri licenseurl, FileInfo destination)
-        {
-            url = licenseurl;
-            dest = destination;
-        }
-        public Uri url;
-        public FileInfo dest;
-        public StreamWriter stream = StreamWriter.Null;
+        public Uri Url { get; set; } = licenseurl;
+        public FileInfo Dest { get; set; } = destination;
     }
     public static async Task<NulicLicense> DownloadFrom(Uri licenseurl, FileInfo dest)
     {
-        var download = new Download (licenseurl, dest);
+        var download = new Download(licenseurl, dest);
 
         var result = await DownloadFrom(download, null);
 
@@ -29,13 +23,13 @@ internal class LicenseDownload
             var rsp = await Program.HttpClient.GetAsync(licenseurl);
 
             if (rsp.RequestMessage?.RequestUri is Uri url)
-                download.url = url;
+                download.Url = url;
 
-            if (download.url != licenseurl)
+            if (download.Url != licenseurl)
             {
-                var redirectFilename = Path.GetFileName(download.url.AbsolutePath);
+                var redirectFilename = Path.GetFileName(download.Url.AbsolutePath);
                 if (!string.IsNullOrEmpty(redirectFilename))
-                    download.dest = new FileInfo(Path.Join(download.dest.DirectoryName, redirectFilename));
+                    download.Dest = new FileInfo(Path.Join(download.Dest.DirectoryName, redirectFilename));
 
                 result = await DownloadFrom(download, rsp);
             }
@@ -44,7 +38,7 @@ internal class LicenseDownload
         {
             Func<Task<string>> download_task = () => throw new UnknownUrlException();
 
-            result = await NulicLicense.FindOrCreate(download_task, download.dest, download.url);
+            result = await NulicLicense.FindOrCreate(download_task, download.Dest, download.Url);
         }
         else
         {
@@ -57,28 +51,40 @@ internal class LicenseDownload
     }
     static async Task<NulicLicense?> DownloadFrom(Download download, HttpResponseMessage? rsp)
     {
-        Func<Task<string>>? download_task = null;
-        var urlBefore = download.url;
+        var host = download.Url.Host;
+        if (host.StartsWith("www.")) host = host[4..];
 
-        if (LookupFileLinkFrom(ref download))
+        // spdx.org license URLs: delegate to SpdxLookup which handles the JSON API correctly
+        if (host == "spdx.org" && download.Url.AbsolutePath.StartsWith("/licenses/"))
         {
-            if (download.url != urlBefore) rsp = null; // URL was transformed, discard stale response
+            var spdxId = Path.GetFileNameWithoutExtension(download.Url.AbsolutePath);
+            var sharedRoot = download.Dest.Directory?.Parent
+                ?? throw new InvalidOperationException($"Cannot determine license root for SPDX URL: {download.Url}");
+            return await SpdxLookup.DownloadLicense(spdxId, sharedRoot);
+        }
+
+        Func<Task<string>>? download_task = null;
+        var urlBefore = download.Url;
+
+        if (LookupFileLinkFrom(download))
+        {
+            if (download.Url != urlBefore) rsp = null; // URL was transformed, discard stale response
             download_task = () => DownloadFileFrom(download, rsp);
         }
-        else if (LookupHtmlElementFrom(ref download) is string element)
+        else if (LookupHtmlElementFrom(download) is string element)
             download_task = () => DownloadHtmlElement(download, element, rsp);
 
-        else if (LookupHtmlFlattenable(ref download))
+        else if (LookupHtmlFlattenable(download))
             download_task = () => DownloadHtmlFlattened(download, rsp);
 
         if (download_task is null)
             return null;
 
-        return await NulicLicense.FindOrCreate(download_task, download.dest, download.url);
+        return await NulicLicense.FindOrCreate(download_task, download.Dest, download.Url);
     }
-    static bool LookupFileLinkFrom(ref Download download)
+    static bool LookupFileLinkFrom(Download download)
     {
-        var host = download.url.Host;
+        var host = download.Url.Host;
 
         if (host.StartsWith("www."))
             host = host.Substring(4);
@@ -86,45 +92,40 @@ internal class LicenseDownload
         if (host == "raw.githubusercontent.com")
             return true;
 
-        if (host == "github.com" && download.url.AbsolutePath.Contains("/blob/"))
+        if (host == "github.com" && download.Url.AbsolutePath.Contains("/blob/"))
         {
-            var path = download.url.AbsolutePath.Replace("/blob/", "/");
+            var path = download.Url.AbsolutePath.Replace("/blob/", "/");
 
-            download.url = new Uri($"https://raw.githubusercontent.com{path}");
+            download.Url = new Uri($"https://raw.githubusercontent.com{path}");
 
             return true;
         }
 
-        if (host == "spdx.org" && download.url.AbsolutePath.Contains("/licenses/"))
-        {
-            throw new Exception("todo ...");
-        }
-
-        var ext = Path.GetExtension(download.url.AbsolutePath).ToLowerInvariant();
+        var ext = Path.GetExtension(download.Url.AbsolutePath).ToLowerInvariant();
         if (ext is ".rtf" or ".txt" or ".md")
             return true;
 
         return false;
     }
-    static bool LookupHtmlFlattenable(ref Download download)
+    static bool LookupHtmlFlattenable(Download download)
     {
-        var host = download.url.Host;
+        var host = download.Url.Host;
 
         if (host.StartsWith("www."))
             host = host.Substring(4);
 
-        if (host == "dotnet.microsoft.com" && download.url.AbsolutePath == "/en-us/dotnet_library_license.htm")
+        if (host == "dotnet.microsoft.com" && download.Url.AbsolutePath == "/en-us/dotnet_library_license.htm")
         {
             // redirect to storage at license root-folder, where all shared spdx-licenses are
-            download.dest = new FileInfo(Path.Join(download.dest.Directory?.Parent?.FullName, "DOTNET.txt"));
+            download.Dest = new FileInfo(Path.Join(download.Dest.Directory?.Parent?.FullName, "DOTNET.txt"));
             return true;
         }
 
         return false;
     }
-    static string? LookupHtmlElementFrom(ref Download download)
+    static string? LookupHtmlElementFrom(Download download)
     {
-        var host = download.url.Host;
+        var host = download.Url.Host;
 
         if (host.StartsWith("www."))
             host = host.Substring(4);
@@ -132,9 +133,9 @@ internal class LicenseDownload
         if (host == "opensource.org")
         {
             // redirect to common storage at root location
-            var rootpath = download.dest.Directory?.Parent;
-            var license = Path.GetFileNameWithoutExtension(download.url.AbsolutePath);
-            download.dest = new FileInfo(Path.Join(rootpath?.FullName, $"opensource.org.{license}.txt"));
+            var rootpath = download.Dest.Directory?.Parent;
+            var license = Path.GetFileNameWithoutExtension(download.Url.AbsolutePath);
+            download.Dest = new FileInfo(Path.Join(rootpath?.FullName, $"opensource.org.{license}.txt"));
             return "div#LicenseText";
         }
 
@@ -143,7 +144,7 @@ internal class LicenseDownload
     static async Task<string> DownloadFileFrom(Download download, HttpResponseMessage? rsp)
     {
         if (rsp is null)
-            rsp = await Program.HttpClient.GetAsync(download.url);
+            rsp = await Program.HttpClient.GetAsync(download.Url);
 
         rsp.EnsureSuccessStatusCode();
 
@@ -152,7 +153,7 @@ internal class LicenseDownload
     static async Task<string> DownloadHtmlElement(Download download, string element, HttpResponseMessage? rsp)
     {
         if (rsp is null)
-            rsp = await Program.HttpClient.GetAsync(download.url);
+            rsp = await Program.HttpClient.GetAsync(download.Url);
 
         rsp.EnsureSuccessStatusCode();
 
@@ -165,14 +166,14 @@ internal class LicenseDownload
         var text = doc.QuerySelector(element)?.TextContent;
 
         if (string.IsNullOrEmpty(text))
-            throw new Exception($"Lookup '{element}' from {download.url} failed.");
+            throw new Exception($"Lookup '{element}' from {download.Url} failed.");
 
         return text;
     }
     static async Task<string> DownloadHtmlFlattened(Download download, HttpResponseMessage? rsp)
     {
         if (rsp is null)
-            rsp = await Program.HttpClient.GetAsync(download.url);
+            rsp = await Program.HttpClient.GetAsync(download.Url);
 
         rsp.EnsureSuccessStatusCode();
 
@@ -187,7 +188,7 @@ internal class LicenseDownload
         var text = textify.Convert(doc.Body);
 
         if (string.IsNullOrEmpty(text))
-            throw new Exception($"Lookup/flatten {download.url} failed.");
+            throw new Exception($"Lookup/flatten {download.Url} failed.");
 
         return text;
     }
