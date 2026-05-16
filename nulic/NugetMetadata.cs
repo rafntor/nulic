@@ -45,12 +45,15 @@ internal class NugetMetadata
             return NulicLicense.NOASSERTION;
         }
     }
-    public Uri LicenseUrl
+    public Uri? LicenseUrl
     {
         get
         {
             if (_manifest.LicenseUrl is Uri uri && uri != LicenseMetadata.LicenseFileDeprecationUrl)
                 return uri;
+
+            if (License == NulicLicense.NOASSERTION)
+                return null;
 
             return new Uri(string.Format(CultureInfo.InvariantCulture, 
                 LicenseMetadata.LicenseServiceLinkTemplate, License));
