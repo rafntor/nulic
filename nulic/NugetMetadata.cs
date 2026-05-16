@@ -60,6 +60,10 @@ internal class NugetMetadata
             if (License == NulicLicense.NOASSERTION)
                 return null;
 
+            // licenses.nuget.org only resolves single SPDX identifiers, not compound expressions
+            if (License.Contains(' '))
+                return null;
+
             return new Uri(string.Format(CultureInfo.InvariantCulture, 
                 LicenseMetadata.LicenseServiceLinkTemplate, License));
         } 
