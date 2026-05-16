@@ -18,26 +18,41 @@ internal class Program
 
         var app = CreateApp();
 
-        await app.InvokeAsync(args);
+        await app.Parse(args).InvokeAsync();
 
         Log.Information("Done.");
     }
     static RootCommand CreateApp()
     {
-        var path = new Argument<string>("path", () => ".", "Solution-file, project-file or folder");
-        var settings_folder = new Option<DirectoryInfo>("--settings-folder", () => new DirectoryInfo("settings"), "Use custom settings from settings-folder. Settings can add missing license-information and decide which packages and licenses are included in the output.");
-        var dump_settings = new Option<bool>("--dump-settings", "Dump current settings and exit. Use this to save the built-in settings to use as base for creating customized settings that override the defaults.");
+        var path = new Argument<string>("path")
+        {
+            Description = "Solution-file, project-file or folder",
+            DefaultValueFactory = _ => "."
+        };
+        var settings_folder = new Option<DirectoryInfo>("--settings-folder")
+        {
+            Description = "Use custom settings from settings-folder. Settings can add missing license-information and decide which packages and licenses are included in the output.",
+            DefaultValueFactory = _ => new DirectoryInfo("settings")
+        };
+        var dump_settings = new Option<bool>("--dump-settings")
+        {
+            Description = "Dump current settings and exit. Use this to save the built-in settings to use as base for creating customized settings that override the defaults."
+        };
 
-        settings_folder.AddAlias("-s");
-        dump_settings.AddAlias("-d");
+        settings_folder.Aliases.Add("-s");
+        dump_settings.Aliases.Add("-d");
 
         var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
 
-        rootCommand.AddArgument(path);
-        rootCommand.AddOption(settings_folder);
-        rootCommand.AddOption(dump_settings);
+        rootCommand.Arguments.Add(path);
+        rootCommand.Options.Add(settings_folder);
+        rootCommand.Options.Add(dump_settings);
 
-        rootCommand.SetHandler(Process, path, settings_folder, dump_settings);
+        rootCommand.SetAction(async (parseResult, _) =>
+        {
+            await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings));
+            return 0;
+        });
 
         return rootCommand;
     }
