@@ -54,6 +54,15 @@ internal class LicenseDownload
         var host = download.Url.Host;
         if (host.StartsWith("www.")) host = host[4..];
 
+        if (host == "licenses.nuget.org")
+        {
+            // licenses.nuget.org/{spdx-id} is just a redirect to the canonical SPDX text
+            var spdxId = download.Url.AbsolutePath.Trim('/');
+            var sharedRoot = download.Dest.Directory?.Parent
+                ?? throw new InvalidOperationException($"Cannot determine license root for licenses.nuget.org URL: {download.Url}");
+            return await SpdxLookup.DownloadLicense(spdxId, sharedRoot);
+        }
+
         // spdx.org license URLs: delegate to SpdxLookup which handles the JSON API correctly
         if (host == "spdx.org" && download.Url.AbsolutePath.StartsWith("/licenses/"))
         {
