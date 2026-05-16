@@ -153,7 +153,7 @@ internal class NugetMetadata
 
         license.OnEachLeafNode( // licenses and license-exceptions
             (l) => result.Add(SpdxLookup.DownloadLicense(l.Identifier, destination)),
-            (e) => result.Add(SpdxLookup.DownloadLicense(e.Identifier, destination))
+            (e) => result.Add(SpdxLookup.DownloadException(e.Identifier, destination))
             );
 
         return Task.WhenAll(result);

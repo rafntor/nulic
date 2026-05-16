@@ -12,6 +12,14 @@ internal class SpdxLookup
 
         return NulicLicense.FindOrCreate(text_getter, file, spdx_id: spdx_id);
     }
+    public static Task<NulicLicense> DownloadException(string exception_id, DirectoryInfo destination)
+    {
+        var file = new FileInfo(Path.Join(destination.FullName, $"{exception_id}.txt"));
+
+        var text_getter = () => DownloadSpdxException(exception_id);
+
+        return NulicLicense.FindOrCreate(text_getter, file);
+    }
     static Task<string> FindOrDownloadLicense(string spdx_id)
     {
         if (CommonLicenses.Licenses.TryGetValue(spdx_id, out var license_text))
@@ -31,6 +39,20 @@ internal class SpdxLookup
             tok.GetString() is { Length: > 0 } text)
             return text;
 
-        throw new JsonException($"SpdxLookup: Failed to extract 'licenseText'.");
+        throw new JsonException($"SpdxLookup: Failed to extract 'licenseText' for '{spdx_id}'.");
+    }
+    static async Task<string> DownloadSpdxException(string exception_id)
+    {
+        var url = new Uri($"https://spdx.org/licenses/exceptions/{exception_id}.json");
+
+        var json = await Program.HttpClient.GetStringAsync(url);
+
+        using var doc = JsonDocument.Parse(json);
+
+        if (doc.RootElement.TryGetProperty("licenseExceptionText", out var tok) &&
+            tok.GetString() is { Length: > 0 } text)
+            return text;
+
+        throw new JsonException($"SpdxLookup: Failed to extract 'licenseExceptionText' for '{exception_id}'.");
     }
 }
