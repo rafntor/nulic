@@ -48,6 +48,14 @@ internal class Program
             Description = "Dump current settings and exit. Use this to save the built-in settings to use as base for creating customized settings that override the defaults."
         };
 
+        var exclude = new Option<string[]>("--exclude")
+        {
+            Description = "Exclude projects matching a glob pattern (matched against full path). Repeatable. E.g: --exclude *Test* --exclude tests/*",
+            AllowMultipleArgumentsPerToken = false,
+        };
+        exclude.Aliases.Add("-e");
+        exclude.Arity = ArgumentArity.ZeroOrMore;
+
         settings_folder.Aliases.Add("-s");
         dump_settings.Aliases.Add("-d");
 
@@ -56,20 +64,21 @@ internal class Program
         rootCommand.Arguments.Add(path);
         rootCommand.Options.Add(settings_folder);
         rootCommand.Options.Add(dump_settings);
+        rootCommand.Options.Add(exclude);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
-            await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings));
+            await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings), parseResult.GetValue(exclude));
             return 0;
         });
 
         return rootCommand;
     }
-    static async Task Process(string path, DirectoryInfo settings_folder, bool dump_settings)
+    static async Task Process(string path, DirectoryInfo settings_folder, bool dump_settings, string[]? exclude = null)
     {
         ProgramSettings.Load(settings_folder, dump_settings);
 
-        var projects = MSBuildProject.LoadFrom(path);
+        var projects = MSBuildProject.LoadFrom(path, exclude);
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
 

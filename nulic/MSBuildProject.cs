@@ -1,4 +1,5 @@
 ﻿using Microsoft.Build.Construction;
+using Serilog;
 
 namespace nulic;
 
@@ -20,7 +21,7 @@ internal class MSBuildProject
     {
         _msbuild_project = msbuild_project;
     }
-    public static IEnumerable<MSBuildProject> LoadFrom(string path)
+    public static IEnumerable<MSBuildProject> LoadFrom(string path, IEnumerable<string>? excludePatterns = null)
     {
         List<MSBuildProject> result = new();
 
@@ -29,7 +30,24 @@ internal class MSBuildProject
         else
             LoadFrom(new DirectoryInfo(path), result);
 
+        if (excludePatterns?.Any() == true)
+        {
+            result.RemoveAll(p =>
+            {
+                if (!IsExcluded(p.FilePath.FullName, excludePatterns)) return false;
+                Log.Information($"Excluded: {p.FilePath.Name}");
+                return true;
+            });
+        }
+
         return result;
+    }
+    static bool IsExcluded(string fullPath, IEnumerable<string> patterns)
+    {
+        // Normalize to forward slashes so patterns work cross-platform
+        var normalized = fullPath.Replace('\\', '/');
+        return patterns.Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(
+            p.Replace('\\', '/'), normalized, ignoreCase: true));
     }
     static void LoadFrom(DirectoryInfo dir, IList<MSBuildProject> list)
     {
