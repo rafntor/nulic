@@ -35,7 +35,7 @@ internal class MSBuildProject
             result.RemoveAll(p =>
             {
                 if (!IsExcluded(p.FilePath.FullName, excludePatterns)) return false;
-                Log.Information($"Excluded: {p.FilePath.Name}");
+                Log.Information($"Excluded: {Path.GetRelativePath(Environment.CurrentDirectory, p.FilePath.FullName)}");
                 return true;
             });
         }
