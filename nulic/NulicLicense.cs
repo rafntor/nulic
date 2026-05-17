@@ -27,6 +27,7 @@ internal class NulicLicense
     static readonly object _lock = new();
     static readonly Dictionary<string, NulicLicense> _byPath = new(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, NulicLicense> _bySpdxId = new(StringComparer.Ordinal);
+    static readonly Dictionary<string, NulicLicense> _byContentHash = new(StringComparer.Ordinal);
     static readonly Cosine _strcmp = new();
     static NulicLicense()
     {
@@ -51,8 +52,9 @@ internal class NulicLicense
     async Task InitializeOnce(Func<Task<string>> text_getter)
     {
         string? license_text = null;
+        bool already_on_disk = Filepath.Exists && Filepath.Length > 0;
 
-        if (Filepath.Exists && Filepath.Length > 0) // use existing license text
+        if (already_on_disk) // use existing license text from a previous run
         {
             license_text = File.ReadAllText(Filepath.FullName);
         }
@@ -63,23 +65,35 @@ internal class NulicLicense
 
             if (license_text is null)
                 license_text = await text_getter();
-
-            Filepath.Directory?.Create();
-
-            using var sw = new StreamWriter(Filepath.OpenWrite());
-
-            await sw.WriteAsync(license_text);
         }
 
-        // now some additional discovery based on license content
-
+        // compute metadata first (needed for dedup copy and final output)
         _profile = _strcmp.GetProfile(license_text);
 
         if (_spdx_id is null)
         {
             _spdx_id = LookupSpdxID(_profile) ?? LicenseAnalysis.LookupSpdxIDByKeywords(license_text);
-
             Copyright = LicenseAnalysis.LookupCopyrights(new StringReader(license_text));
+        }
+
+        if (!already_on_disk)
+        {
+            // dedup: if identical content already exists, point to that file and skip write
+            var hash = ComputeContentHash(license_text);
+            lock (_lock)
+            {
+                if (_byContentHash.TryGetValue(hash, out var canonical))
+                {
+                    Filepath = canonical.Filepath;
+                    return;
+                }
+                _byContentHash[hash] = this;
+            }
+
+            Filepath.Directory?.Create();
+
+            using var sw = new StreamWriter(Filepath.OpenWrite());
+            await sw.WriteAsync(license_text);
         }
     }
     Task Initialize(Func<Task<string>> text_getter)
@@ -145,12 +159,18 @@ internal class NulicLicense
 
         return null;
     }
+    static string ComputeContentHash(string text)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(text);
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    }
     internal static void Reset()
     {
         lock (_lock)
         {
             _byPath.Clear();
             _bySpdxId.Clear();
+            _byContentHash.Clear();
             foreach (var license in CommonLicenses.Licenses)
             {
                 var nl = new NulicLicense(_null_file)
