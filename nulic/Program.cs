@@ -93,6 +93,7 @@ internal class Program
         var outfile = Path.Join(license_root.FullName, "licenses.json");
 
         await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
+        await MarkdownReport.Write(nugets, license_root);
 
         var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION);
 
