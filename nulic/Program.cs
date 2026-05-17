@@ -56,6 +56,14 @@ internal class Program
         exclude.Aliases.Add("-e");
         exclude.Arity = ArgumentArity.ZeroOrMore;
 
+        var ignore = new Option<string[]>("--ignore")
+        {
+            Description = "Ignore packages by ID glob or author glob (prefix with 'author:'). Repeatable. E.g: --ignore *Longship.Cruises* --ignore author:*Erik the Red*",
+            AllowMultipleArgumentsPerToken = false,
+        };
+        ignore.Aliases.Add("-i");
+        ignore.Arity = ArgumentArity.ZeroOrMore;
+
         settings_folder.Aliases.Add("-s");
         dump_settings.Aliases.Add("-d");
 
@@ -65,16 +73,17 @@ internal class Program
         rootCommand.Options.Add(settings_folder);
         rootCommand.Options.Add(dump_settings);
         rootCommand.Options.Add(exclude);
+        rootCommand.Options.Add(ignore);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
-            await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings), parseResult.GetValue(exclude));
+            await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings), parseResult.GetValue(exclude), parseResult.GetValue(ignore));
             return 0;
         });
 
         return rootCommand;
     }
-    static async Task Process(string path, DirectoryInfo settings_folder, bool dump_settings, string[]? exclude = null)
+    static async Task Process(string path, DirectoryInfo settings_folder, bool dump_settings, string[]? exclude = null, string[]? ignore = null)
     {
         ProgramSettings.Load(settings_folder, dump_settings);
 
@@ -84,6 +93,9 @@ internal class Program
 
         var nugetArrays = await Task.WhenAll(projects.Select(NugetMetadata.GetFrom));
         var nugets = nugetArrays.SelectMany(x => x).DistinctBy(n => (n.Id, n.Version)).ToArray();
+
+        if (ignore?.Length > 0)
+            nugets = ApplyIgnore(nugets, ignore);
 
         string? dir = File.Exists(path) ? Path.GetDirectoryName(path) : path;
         var license_root = new DirectoryInfo(Path.Join(dir, "licenses"));
@@ -116,6 +128,33 @@ internal class Program
             Console.WriteLine($"{problem_count} packages has not : ");
             Console.WriteLine(string.Join(Environment.NewLine, problems));
         }
+    }
+
+    static NugetMetadata[] ApplyIgnore(NugetMetadata[] nugets, string[] patterns)
+    {
+        var idPatterns = patterns.Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var authorPatterns = patterns
+            .Where(p => p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
+            .Select(p => p["author:".Length..])
+            .ToArray();
+
+        bool Matches(string value, string[] pats) => pats.Any(p =>
+            System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, value, ignoreCase: true));
+
+        return nugets.Where(n =>
+        {
+            if (Matches(n.Id, idPatterns))
+            {
+                Log.Information($"Ignored: {n.Id} {n.Version} (id match)");
+                return false;
+            }
+            if (n.Authors.Any() && n.Authors.All(a => Matches(a, authorPatterns)))
+            {
+                Log.Information($"Ignored: {n.Id} {n.Version} (author match)");
+                return false;
+            }
+            return true;
+        }).ToArray();
     }
 
     class NuGetVersionConverter : JsonConverter<NuGetVersion>
