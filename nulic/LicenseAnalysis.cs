@@ -64,6 +64,8 @@ internal static class LicenseAnalysis
 
         if (has("Classpath") && has("special exception"))
             return "Classpath-exception-2.0";
+        if (has("eCos") && has("special exception"))
+            return "eCos-exception-2.0";
         if (has("special exception") && (has("instantiate") || has("inline functions") || has("link it with")))
             return "LicenseRef-linking-exception";
 
