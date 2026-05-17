@@ -75,6 +75,8 @@ internal static class LicenseAnalysis
             return "eCos-exception-2.0";
         if (has("special exception") && (has("instantiate") || has("inline functions") || has("link it with")))
             return "LicenseRef-linking-exception";
+        if (has("permission to link"))
+            return "LicenseRef-linking-exception";
 
         return null;
     }
