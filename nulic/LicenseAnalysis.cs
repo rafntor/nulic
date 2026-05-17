@@ -46,13 +46,18 @@ internal static class LicenseAnalysis
         if (has("This is free and unencumbered software released into the public domain"))
             found.Add("Unlicense");
 
+        if (has("The Software shall be used for Good, not Evil"))
+            found.Add("JSON");
+
         if (found.Count == 0) return null;
 
-        // Exceptions are only meaningful on a single GPL base license
-        if (found.Count == 1 && (found.Contains("GPL-2.0-only") || found.Contains("GPL-3.0-only")))
+        // Apply WITH-exception to GPL even inside multi-license bundles
+        foreach (var gplId in new[] { "GPL-2.0-only", "GPL-3.0-only" })
         {
+            if (!found.Contains(gplId)) continue;
             var ex = DetectSpdxException(text);
-            if (ex != null) return $"{found.First()} WITH {ex}";
+            if (ex != null) { found.Remove(gplId); found.Add($"{gplId} WITH {ex}"); }
+            break;
         }
 
         return string.Join(" AND ", found.OrderBy(x => x));
