@@ -45,7 +45,7 @@ Program.cs               CLI entry-point (System.CommandLine)
             └─ LicenseDownload   URL-based license fetching (handles transforms)
             └─ SpdxLookup        Downloads canonical SPDX license texts from spdx.org
             └─ CommonLicenses    Bundled text for the most common SPDX licenses
-ProgramSettings          Settings loader (currently stubbed — planned for overrides)
+ProgramSettings          Loads/creates nulic.json; PackageOverride; NulicSettings
 ```
 
 ### Package discovery (`NugetMetadata.GetNugetIdsFrom`)
@@ -136,24 +136,47 @@ first caller runs `InitializeOnce`, others await the semaphore.
 ## CLI
 
 ```
-nulic [path] [--settings-folder <dir>] [--dump-settings]
+nulic [<path>] [--log-level <level>] [--show-defaults]
 ```
 
-- `path`: solution file, project file, or folder (default: `.`)
-- `--settings-folder` / `-s`: custom settings directory (default: `settings/`)
-- `--dump-settings` / `-d`: print built-in settings as JSON and exit
+- `<path>`: solution file, project file, or folder (default: `.`)
+- `--log-level` / `-l`: minimum Serilog log level (Verbose/Debug/Information/Warning/Error/Fatal). Default: Information.
+- `--show-defaults` / `-d`: print the default `nulic.json` to stdout and exit (useful as a starting template)
 
-Output is always written to `<path>/licenses/`.
+Output is always written to `<solutiondir>/licenses/`.
 
-## ProgramSettings (planned — currently stubbed)
+## nulic.json — settings file
 
-The settings system is intended to support:
-- Manual license overrides for packages with dead/wrong URLs
-- Allowlist validation (planned — to reach parity with nuget-license)
-- Package exclusion/ignore lists
-- Custom URL→SPDX mappings
+`nulic.json` is auto-discovered next to the solution/project file on first run (auto-created with
+opinionated defaults if not present). It is **not** committed to the repo (`.gitignore`d).
 
-`--dump-settings` will export the built-in defaults so users can copy and customize them.
+```jsonc
+{
+  "exclude": [],          // glob patterns for project files to exclude
+  "ignore": [],           // id: or author: patterns for packages to ignore (e.g. dev deps)
+  "allow": [],            // SPDX expressions/ids that are allowed; non-empty enables allowlist mode
+  "overrides": [          // patch existing packages or inject new ones
+    {
+      "id": "Acme.Pkg",           // required — package id to match or inject
+      "version": "1.2.3",         // optional — pin to specific version
+      "license": "MIT",           // SPDX expression or LicenseRef-*
+      "licenseUrl": "https://..." // or local path relative to nulic.json
+    }
+  ]
+}
+```
+
+- Overrides with `id` matching an existing package patch its metadata.
+- Overrides with no matching package are injected as new entries.
+- `licenseUrl` may be an `http/https` URL or a local file path relative to `nulic.json`.
+- `LicenseRef-*` identifiers are label-only (no file downloaded, a warning is logged).
+- Packages whose `id` matches an `ignore` pattern are excluded from output entirely.
+
+## ProgramSettings
+
+`ProgramSettings.Load(DirectoryInfo solutionDir)` auto-discovers `nulic.json` next to the solution.
+If not found, it writes a default file and loads that. `ProgramSettings.SerializeDefault()` returns
+the default JSON (used by `--show-defaults`).
 
 ## Packages and dependencies
 
@@ -161,6 +184,7 @@ The settings system is intended to support:
 |---|---|
 | `NuGet.Commands` / `NuGet.Protocol` | Read `project.assets.json`, global cache, nuspec |
 | `Microsoft.Build` | Load `.sln`/`.csproj` for project discovery |
+| `MinVer` | Version derived from git tags |
 | `System.CommandLine` | CLI argument parsing |
 | `F23.StringSimilarity` | Cosine similarity for SPDX ID detection |
 | `AngleSharp` | HTML parsing (e.g. license pages that are HTML not text) |
@@ -178,9 +202,7 @@ The settings system is intended to support:
 
 ## Known gaps / future work
 
-- `ProgramSettings.Load()` is stubbed — implement settings loading for manual overrides
-- Allowlist validation (exit-code-based CI gate, like nuget-license)
-- `NETStandard.Library` has a dead license URL — needs settings override
-- Package exclusion / ignore-list support
 - Output formats beyond JSON (table, markdown, CSV)
-- `--error-only` flag to suppress valid packages from output
+- `--error-only` flag to suppress valid packages from console output
+- `NETStandard.Library` has a dead license URL — candidate for a built-in override
+- Allowlist exit-code semantics: currently exits 1 if any package is not in the allowlist; may want a `--warn-only` mode

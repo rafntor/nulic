@@ -128,6 +128,14 @@ internal class LicenseDownload
             return true;
         }
 
+        // go.microsoft.com/fwlink?LinkId=329770 — .NET Library License (NETStandard.Library, System.* 4.x)
+        if (host == "go.microsoft.com" && download.Url.Query.Contains("LinkId=329770", StringComparison.OrdinalIgnoreCase))
+        {
+            download.Url = new Uri("https://dotnet.microsoft.com/en-us/dotnet_library_license.htm");
+            download.Dest = new FileInfo(Path.Join(download.Dest.Directory?.Parent?.FullName, "DOTNET.txt"));
+            return true;
+        }
+
         return false;
     }
     static string? LookupHtmlElementFrom(Download download)

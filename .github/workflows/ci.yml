@@ -27,6 +27,18 @@ jobs:
       - name: Test
         run: dotnet test testprojects/unit_tests --nologo -c Release
 
+      - name: Dog-food (run nulic on itself)
+        run: dotnet nulic/bin/Release/net10.0/nulic.dll .
+
+      - name: Publish license report to job summary
+        run: cat licenses/licenses.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload licenses as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: licenses
+          path: licenses/
+
       - name: Pack
         if: startsWith(github.ref, 'refs/tags/v')
         run: dotnet pack nulic/nulic.csproj --nologo -c Release -o nupkg
