@@ -43,77 +43,58 @@ internal class Program
         };
         var logLevel = new Option<LogEventLevel?>("--log-level")
         {
-            Description = "Minimum log level: Verbose, Debug, Information, Warning, Error, Fatal.",
+            Description = "Minimum log level: Verbose, Debug, Information, Warning, Error, Fatal. Default: Information.",
             DefaultValueFactory = _ => null
         };
         logLevel.Aliases.Add("-l");
 
-        var exclude = new Option<string[]>("--exclude")
+        var showDefaults = new Option<bool>("--show-defaults")
         {
-            Description = "Exclude projects matching a glob pattern (matched against full path). Repeatable. E.g: --exclude *Test* --exclude tests/*",
-            AllowMultipleArgumentsPerToken = false,
+            Description = "Print the default nulic.json to stdout and exit."
         };
-        exclude.Aliases.Add("-e");
-        exclude.Arity = ArgumentArity.ZeroOrMore;
-
-        var ignore = new Option<string[]>("--ignore")
-        {
-            Description = "Ignore packages by ID glob (prefix 'id:' optional), author glob (prefix 'author:'), or special flags. " +
-                          "Flags: 'developmentDependency' (packages.config), 'PrivateAssets' (SDK-style PrivateAssets=all). " +
-                          "Repeatable. E.g: --ignore developmentDependency --ignore PrivateAssets --ignore id:*Longship* --ignore author:*Erik the Red*",
-            AllowMultipleArgumentsPerToken = false,
-        };
-        ignore.Aliases.Add("-i");
-        ignore.Arity = ArgumentArity.ZeroOrMore;
-
-        var allow = new Option<string[]>("--allow")
-        {
-            Description = "SPDX license IDs that are permitted. If specified, exits with code 1 if any package license is not in the list. NOASSERTION always fails. Use 'WITH <exception>' to allow any license carrying that exception. Repeatable. E.g: --allow MIT --allow Apache-2.0 --allow \"WITH Classpath-exception-2.0\"",
-            AllowMultipleArgumentsPerToken = false,
-        };
-        allow.Aliases.Add("-a");
-        allow.Arity = ArgumentArity.ZeroOrMore;
+        showDefaults.Aliases.Add("-d");
 
         var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
 
         rootCommand.Arguments.Add(path);
         rootCommand.Options.Add(logLevel);
-        rootCommand.Options.Add(exclude);
-        rootCommand.Options.Add(ignore);
-        rootCommand.Options.Add(allow);
+        rootCommand.Options.Add(showDefaults);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
-            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(exclude), parseResult.GetValue(ignore), parseResult.GetValue(allow));
+            if (parseResult.GetValue(showDefaults))
+            {
+                Console.WriteLine(ProgramSettings.SerializeDefault());
+                return 0;
+            }
+            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel));
         });
 
         return rootCommand;
     }
-    static async Task<int> Process(string path, LogEventLevel? logLevel = null, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
+    static async Task<int> Process(string path, LogEventLevel? logLevel = null)
     {
         var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
         ProgramSettings.Load(solutionDir);
 
         var settings = ProgramSettings.Settings;
 
-        // CLI wins for log level; file default otherwise
         Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Is(logLevel ?? settings.LogLevel ?? LogEventLevel.Information)
+            .MinimumLevel.Is(logLevel ?? LogEventLevel.Information)
             .WriteTo.Console()
             .CreateLogger();
 
-        // Arrays merge: file values + CLI values
-        var effectiveExclude = (settings.Exclude ?? []).Concat(exclude ?? []).ToArray();
-        var effectiveIgnore  = (settings.Ignore  ?? []).Concat(ignore  ?? []).ToArray();
-        var effectiveAllow   = (settings.Allow   ?? []).Concat(allow   ?? []).ToArray();
+        var exclude = settings.Exclude ?? [];
+        var ignore  = settings.Ignore  ?? [];
+        var allow   = settings.Allow   ?? [];
 
-        var projects = MSBuildProject.LoadFrom(path, effectiveExclude.Length > 0 ? effectiveExclude : null);
+        var projects = MSBuildProject.LoadFrom(path, exclude.Length > 0 ? exclude : null);
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
 
-        bool ignoreDevDep = effectiveIgnore.Contains("developmentDependency", StringComparer.OrdinalIgnoreCase);
-        bool ignorePrivate = effectiveIgnore.Contains("PrivateAssets", StringComparer.OrdinalIgnoreCase);
-        var patternIgnore = effectiveIgnore.Where(i =>
+        bool ignoreDevDep = ignore.Contains("developmentDependency", StringComparer.OrdinalIgnoreCase);
+        bool ignorePrivate = ignore.Contains("PrivateAssets", StringComparer.OrdinalIgnoreCase);
+        var patternIgnore = ignore.Where(i =>
             !i.Equals("developmentDependency", StringComparison.OrdinalIgnoreCase) &&
             !i.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)).ToArray();
 
@@ -177,8 +158,8 @@ internal class Program
         foreach (var p in problems)
             Log.Warning("NOASSERTION: {id} {version}", p.Id, p.Version);
 
-        if (effectiveAllow.Length > 0)
-            return ApplyAllow(nugets, effectiveAllow);
+        if (allow.Length > 0)
+            return ApplyAllow(nugets, allow);
 
         return 0;
     }
