@@ -80,6 +80,48 @@ internal class NugetMetadata
 
         return await Task.WhenAll(ids.Select(FromPackageId));
     }
+
+    public static HashSet<string> GetIgnoredIds(IEnumerable<MSBuildProject> projects, bool devDependency, bool privateAssets)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!devDependency && !privateAssets) return result;
+
+        foreach (var project in projects)
+        {
+            var package_config = Path.Join(project.FilePath.DirectoryName, NuGetConstants.PackageReferenceFile);
+
+            if (File.Exists(package_config) && devDependency)
+            {
+                List<PackageReference> packages;
+                using (var stream = File.OpenRead(package_config))
+                    packages = new PackagesConfigReader(stream).GetPackages().ToList();
+
+                foreach (var p in packages.Where(p => p.IsDevelopmentDependency))
+                {
+                    Log.Debug("Will ignore developmentDependency {Id}", p.PackageIdentity.Id);
+                    result.Add(p.PackageIdentity.Id);
+                }
+            }
+
+            var project_assets = Path.Join(project.IntDir, LockFileFormat.AssetsFileName);
+
+            if (File.Exists(project_assets) && privateAssets)
+            {
+                var lock_file = new LockFileFormat().Read(project_assets);
+                var deps = lock_file.PackageSpec?.TargetFrameworks
+                    .SelectMany(tf => tf.Dependencies)
+                    .Where(d => d.SuppressParent == LibraryIncludeFlags.All)
+                    .Select(d => d.Name) ?? Enumerable.Empty<string>();
+
+                foreach (var name in deps)
+                {
+                    Log.Debug("Will ignore PrivateAssets {Id}", name);
+                    result.Add(name);
+                }
+            }
+        }
+        return result;
+    }
     public static Task CollectInformation(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
     {
         return Task.WhenAll(nugets.Select(nuget => nuget.CollectInformation(license_root)));
@@ -375,10 +417,7 @@ internal class NugetMetadata
             using (var stream = File.OpenRead(package_config))
                 packages = new PackagesConfigReader(stream).GetPackages().ToList();
 
-            foreach (var p in packages.Where(p => p.IsDevelopmentDependency))
-                Log.Debug("Skipping development dependency {Id} {Version}", p.PackageIdentity.Id, p.PackageIdentity.Version);
-
-            return packages.Where(p => !p.IsDevelopmentDependency).Select(p => p.PackageIdentity);
+            return packages.Select(p => p.PackageIdentity);
         }
         else
         {
@@ -388,18 +427,8 @@ internal class NugetMetadata
             {
                 var lock_file = new LockFileFormat().Read(project_assets);
 
-                var dev_deps = lock_file.PackageSpec?.TargetFrameworks
-                    .SelectMany(tf => tf.Dependencies)
-                    .Where(d => d.SuppressParent == LibraryIncludeFlags.All)
-                    .Select(d => d.Name)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase)
-                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                foreach (var name in dev_deps)
-                    Log.Debug("Skipping development dependency {Id}", name);
-
                 return lock_file.Libraries
-                    .Where(l => l.Type == "package" && !dev_deps.Contains(l.Name))
+                    .Where(l => l.Type == "package")
                     .Select(l => new PackageIdentity(l.Name, l.Version));
             }
             else if (project.IsSdkStyle)

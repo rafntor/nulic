@@ -60,7 +60,9 @@ internal class Program
 
         var ignore = new Option<string[]>("--ignore")
         {
-            Description = "Ignore packages by ID glob or author glob (prefix with 'author:'). Repeatable. E.g: --ignore *Longship.Cruises* --ignore author:*Erik the Red*",
+            Description = "Ignore packages by ID glob, author glob (prefix 'author:'), or special flags. " +
+                          "Flags: 'developmentDependency' (packages.config), 'PrivateAssets' (SDK-style PrivateAssets=all). " +
+                          "Repeatable. E.g: --ignore developmentDependency --ignore PrivateAssets --ignore *Longship.Cruises* --ignore author:*Erik the Red*",
             AllowMultipleArgumentsPerToken = false,
         };
         ignore.Aliases.Add("-i");
@@ -101,11 +103,21 @@ internal class Program
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
 
+        bool ignoreDevDep = ignore?.Contains("developmentDependency", StringComparer.OrdinalIgnoreCase) ?? false;
+        bool ignorePrivate = ignore?.Contains("PrivateAssets", StringComparer.OrdinalIgnoreCase) ?? false;
+        var patternIgnore = ignore?.Where(i =>
+            !i.Equals("developmentDependency", StringComparison.OrdinalIgnoreCase) &&
+            !i.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)).ToArray();
+
         var nugetArrays = await Task.WhenAll(projects.Select(NugetMetadata.GetFrom));
         var nugets = nugetArrays.SelectMany(x => x).DistinctBy(n => (n.Id, n.Version)).ToArray();
 
-        if (ignore?.Length > 0)
-            nugets = ApplyIgnore(nugets, ignore);
+        var ignoredIds = NugetMetadata.GetIgnoredIds(projects, ignoreDevDep, ignorePrivate);
+        if (ignoredIds.Count > 0)
+            nugets = nugets.Where(n => !ignoredIds.Contains(n.Id)).ToArray();
+
+        if (patternIgnore?.Length > 0)
+            nugets = ApplyIgnore(nugets, patternIgnore);
 
         string? dir = File.Exists(path) ? Path.GetDirectoryName(path) : path;
         var license_root = new DirectoryInfo(Path.Join(dir, "licenses"));
