@@ -1,4 +1,5 @@
 ﻿using Serilog;
+using Serilog.Events;
 using System.CommandLine;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -40,6 +41,13 @@ internal class Program
             Description = "Solution-file, project-file or folder",
             DefaultValueFactory = _ => "."
         };
+        var logLevel = new Option<LogEventLevel>("--log-level")
+        {
+            Description = "Minimum log level: Verbose, Debug, Information, Warning, Error, Fatal.",
+            DefaultValueFactory = _ => LogEventLevel.Information
+        };
+        logLevel.Aliases.Add("-l");
+
         var exclude = new Option<string[]>("--exclude")
         {
             Description = "Exclude projects matching a glob pattern (matched against full path). Repeatable. E.g: --exclude *Test* --exclude tests/*",
@@ -69,19 +77,25 @@ internal class Program
         var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
 
         rootCommand.Arguments.Add(path);
+        rootCommand.Options.Add(logLevel);
         rootCommand.Options.Add(exclude);
         rootCommand.Options.Add(ignore);
         rootCommand.Options.Add(allow);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
-            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(exclude), parseResult.GetValue(ignore), parseResult.GetValue(allow));
+            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(exclude), parseResult.GetValue(ignore), parseResult.GetValue(allow));
         });
 
         return rootCommand;
     }
-    static async Task<int> Process(string path, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
+    static async Task<int> Process(string path, LogEventLevel logLevel = LogEventLevel.Information, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
     {
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Is(logLevel)
+            .WriteTo.Console()
+            .CreateLogger();
+
         var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
         ProgramSettings.Load(solutionDir);
 
@@ -141,17 +155,12 @@ internal class Program
         await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
         await MarkdownReport.Write(nugets, license_root);
 
-        var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION);
+        var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION).ToArray();
 
-        var problem_count = problems.Count();
+        Log.Information("{valid} / {total} packages: license ok", nugets.Length - problems.Length, nugets.Length);
 
-        Console.WriteLine($"{nugets.Count()} packages has valid license");
-
-        if (problem_count > 0)
-        {
-            Console.WriteLine($"{problem_count} packages has not : ");
-            Console.WriteLine(string.Join(Environment.NewLine, problems));
-        }
+        foreach (var p in problems)
+            Log.Warning("NOASSERTION: {id} {version}", p.Id, p.Version);
 
         if (allow?.Length > 0)
             return ApplyAllow(nugets, allow);
@@ -173,9 +182,8 @@ internal class Program
         if (violations.Length == 0)
             return 0;
 
-        Console.WriteLine($"{violations.Length} packages not in allowlist:");
         foreach (var v in violations)
-            Console.WriteLine($"  {v.Id} {v.Version} [{v.License}]");
+            Log.Warning("Not in allowlist: {id} {version} [{license}]", v.Id, v.Version, v.License);
 
         return 1;
     }
