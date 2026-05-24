@@ -40,16 +40,6 @@ internal class Program
             Description = "Solution-file, project-file or folder",
             DefaultValueFactory = _ => "."
         };
-        var settings_folder = new Option<DirectoryInfo>("--settings-folder")
-        {
-            Description = "Use custom settings from settings-folder. Settings can add missing license-information and decide which packages and licenses are included in the output.",
-            DefaultValueFactory = _ => new DirectoryInfo("settings")
-        };
-        var dump_settings = new Option<bool>("--dump-settings")
-        {
-            Description = "Dump current settings and exit. Use this to save the built-in settings to use as base for creating customized settings that override the defaults."
-        };
-
         var exclude = new Option<string[]>("--exclude")
         {
             Description = "Exclude projects matching a glob pattern (matched against full path). Repeatable. E.g: --exclude *Test* --exclude tests/*",
@@ -76,28 +66,24 @@ internal class Program
         allow.Aliases.Add("-a");
         allow.Arity = ArgumentArity.ZeroOrMore;
 
-        settings_folder.Aliases.Add("-s");
-        dump_settings.Aliases.Add("-d");
-
         var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
 
         rootCommand.Arguments.Add(path);
-        rootCommand.Options.Add(settings_folder);
-        rootCommand.Options.Add(dump_settings);
         rootCommand.Options.Add(exclude);
         rootCommand.Options.Add(ignore);
         rootCommand.Options.Add(allow);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
-            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings), parseResult.GetValue(exclude), parseResult.GetValue(ignore), parseResult.GetValue(allow));
+            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(exclude), parseResult.GetValue(ignore), parseResult.GetValue(allow));
         });
 
         return rootCommand;
     }
-    static async Task<int> Process(string path, DirectoryInfo settings_folder, bool dump_settings, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
+    static async Task<int> Process(string path, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
     {
-        ProgramSettings.Load(settings_folder, dump_settings);
+        var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
+        ProgramSettings.Load(solutionDir);
 
         var projects = MSBuildProject.LoadFrom(path, exclude);
 
@@ -118,6 +104,23 @@ internal class Program
 
         if (patternIgnore?.Length > 0)
             nugets = ApplyIgnore(nugets, patternIgnore);
+
+        // Apply overrides from nulic.json: patch matching packages, inject new entries
+        var overrides = ProgramSettings.Settings.Overrides;
+        var injected = new List<NugetMetadata>();
+        foreach (var o in overrides)
+        {
+            var matches = nugets.Where(n =>
+                n.Id.Equals(o.Id, StringComparison.OrdinalIgnoreCase) &&
+                (o.Version == null || n.Version.ToString() == o.Version)).ToArray();
+
+            if (matches.Length > 0)
+                foreach (var m in matches) m.ApplyOverride(o);
+            else
+                injected.Add(NugetMetadata.FromOverride(o));
+        }
+        if (injected.Count > 0)
+            nugets = nugets.Concat(injected).ToArray();
 
         string? dir = File.Exists(path) ? Path.GetDirectoryName(path) : path;
         var license_root = new DirectoryInfo(Path.Join(dir, "licenses"));

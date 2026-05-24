@@ -19,6 +19,7 @@ internal class NugetMetadata
     List<NulicLicense> _licenses = new();
     Uri? _apiLicenseUrl;
     Uri? _apiProjectUrl;
+    PackageOverride? _override;
     //
     //
     // *** following properties are json-exported
@@ -29,16 +30,18 @@ internal class NugetMetadata
     //
     public string Id => _manifest.Id;
     public NuGetVersion Version => _manifest.Version;
-    public IEnumerable<string> Authors => _manifest.Authors.Select(a => a.Trim());
-    public Uri? ProjectUrl => _manifest.ProjectUrl ?? _apiProjectUrl;
+    public IEnumerable<string> Authors => _override?.Authors ?? _manifest.Authors.Select(a => a.Trim());
+    public Uri? ProjectUrl => (_override?.ProjectUrl is string p ? new Uri(p) : null) ?? _manifest.ProjectUrl ?? _apiProjectUrl;
     //
     // *** next the potentially augmented info from discovery
     //
-    public string Copyright => _manifest.Copyright ?? string.Join(", ", _licenses.SelectMany(l => l.Copyright).Distinct());
+    public string Copyright => _override?.Copyright ?? _manifest.Copyright ?? string.Join(", ", _licenses.SelectMany(l => l.Copyright).Distinct());
     public string License
     {
         get
         {
+            if (_override?.License is string expr) return expr;
+
             if (_manifest.LicenseMetadata?.Type == LicenseType.Expression)
                 return _manifest.LicenseMetadata.License;
 
@@ -164,6 +167,14 @@ internal class NugetMetadata
 
         // 'licenses' contain the relative filepaths from root of the nuget
         IEnumerable<NulicLicense> licenses = Enumerable.Empty<NulicLicense>();
+
+        // Override: explicit licenseUrl takes precedence over everything
+        if (_override?.LicenseUrl != null)
+            return await FetchOverrideLicense(license_root);
+
+        // Override: known SPDX expression without a URL — download canonical text(s)
+        if (_override?.License != null)
+            return await DownloadOverrideExpression(_override.License, license_root);
 
         var license_data = _manifest.LicenseMetadata;
 
@@ -405,6 +416,68 @@ internal class NugetMetadata
         {
             return null;
         }
+    }
+
+    async Task<IEnumerable<NulicLicense>> FetchOverrideLicense(DirectoryInfo license_root)
+    {
+        var urlStr = _override!.LicenseUrl!;
+
+        if (urlStr.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            urlStr.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            var url = new Uri(urlStr);
+            var urlpath = url.AbsolutePath.TrimEnd('/');
+            var filename = Path.GetFileNameWithoutExtension(urlpath);
+            if (string.IsNullOrEmpty(filename)) filename = "license";
+            var ext = Path.GetExtension(urlpath) is { Length: > 0 } e ? e : ".txt";
+            var file = new FileInfo(Path.Join(license_root.FullName, ToString(), $"{filename}{ext}"));
+            var license = await LicenseDownload.DownloadFrom(url, file);
+            return [license];
+        }
+        else
+        {
+            // Local file — resolve relative to the directory containing nulic.json
+            var fullPath = Path.IsPathRooted(urlStr)
+                ? urlStr
+                : Path.Join(ProgramSettings.SettingsDir.FullName, urlStr);
+
+            if (!File.Exists(fullPath))
+            {
+                Log.Warning("{this}: Override license file not found: {path}", ToString(), fullPath);
+                return Enumerable.Empty<NulicLicense>();
+            }
+
+            var sourceFile = new FileInfo(fullPath);
+            var destFile = new FileInfo(Path.Join(license_root.FullName, ToString(), sourceFile.Name));
+            var license = await NulicLicense.FindOrCreate(() => File.ReadAllTextAsync(fullPath), destFile);
+            return [license];
+        }
+    }
+
+    async Task<IEnumerable<NulicLicense>> DownloadOverrideExpression(string expression, DirectoryInfo license_root)
+    {
+        try
+        {
+            var parsed = NuGetLicenseExpression.Parse(expression);
+            var licenses = await DownloadLicenses(parsed, license_root);
+            return licenses.Where(l => !l.IsNotFound);
+        }
+        catch
+        {
+            // Non-standard or unparseable expression (e.g. LicenseRef-*) — label only, no file
+            Log.Warning("{this}: No license file for expression '{expression}' — label only", ToString(), expression);
+            return Enumerable.Empty<NulicLicense>();
+        }
+    }
+
+    public void ApplyOverride(PackageOverride o) => _override = o;
+
+    public static NugetMetadata FromOverride(PackageOverride o)
+    {
+        var version = o.Version != null ? NuGetVersion.Parse(o.Version) : new NuGetVersion(0, 0, 0);
+        var meta = new NugetMetadata(new ManifestMetadata { Id = o.Id, Version = version });
+        meta.ApplyOverride(o);
+        return meta;
     }
 
     static IEnumerable<PackageIdentity> GetNugetIdsFrom(MSBuildProject project)
