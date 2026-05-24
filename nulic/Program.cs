@@ -27,9 +27,11 @@ internal class Program
 
         var app = CreateApp();
 
-        await app.Parse(args).InvokeAsync();
+        var exitCode = await app.Parse(args).InvokeAsync();
 
         Log.Information("Done.");
+
+        Environment.Exit(exitCode);
     }
     static RootCommand CreateApp()
     {
@@ -64,6 +66,14 @@ internal class Program
         ignore.Aliases.Add("-i");
         ignore.Arity = ArgumentArity.ZeroOrMore;
 
+        var allow = new Option<string[]>("--allow")
+        {
+            Description = "SPDX license IDs that are permitted. If specified, exits with code 1 if any package license is not in the list. NOASSERTION always fails. Use 'WITH <exception>' to allow any license carrying that exception. Repeatable. E.g: --allow MIT --allow Apache-2.0 --allow \"WITH Classpath-exception-2.0\"",
+            AllowMultipleArgumentsPerToken = false,
+        };
+        allow.Aliases.Add("-a");
+        allow.Arity = ArgumentArity.ZeroOrMore;
+
         settings_folder.Aliases.Add("-s");
         dump_settings.Aliases.Add("-d");
 
@@ -74,16 +84,16 @@ internal class Program
         rootCommand.Options.Add(dump_settings);
         rootCommand.Options.Add(exclude);
         rootCommand.Options.Add(ignore);
+        rootCommand.Options.Add(allow);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
-            await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings), parseResult.GetValue(exclude), parseResult.GetValue(ignore));
-            return 0;
+            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(settings_folder)!, parseResult.GetValue(dump_settings), parseResult.GetValue(exclude), parseResult.GetValue(ignore), parseResult.GetValue(allow));
         });
 
         return rootCommand;
     }
-    static async Task Process(string path, DirectoryInfo settings_folder, bool dump_settings, string[]? exclude = null, string[]? ignore = null)
+    static async Task<int> Process(string path, DirectoryInfo settings_folder, bool dump_settings, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
     {
         ProgramSettings.Load(settings_folder, dump_settings);
 
@@ -118,7 +128,6 @@ internal class Program
 
         var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION);
 
-        var nuget_count = nugets.Count();
         var problem_count = problems.Count();
 
         Console.WriteLine($"{nugets.Count()} packages has valid license");
@@ -128,6 +137,64 @@ internal class Program
             Console.WriteLine($"{problem_count} packages has not : ");
             Console.WriteLine(string.Join(Environment.NewLine, problems));
         }
+
+        if (allow?.Length > 0)
+            return ApplyAllow(nugets, allow);
+
+        return 0;
+    }
+
+    static int ApplyAllow(NugetMetadata[] nugets, string[] allowed)
+    {
+        var allowedIds = new HashSet<string>(
+            allowed.Where(a => !a.StartsWith("WITH ", StringComparison.OrdinalIgnoreCase)),
+            StringComparer.OrdinalIgnoreCase);
+        var allowedExceptions = new HashSet<string>(
+            allowed.Where(a => a.StartsWith("WITH ", StringComparison.OrdinalIgnoreCase)),
+            StringComparer.OrdinalIgnoreCase);
+
+        var violations = nugets.Where(n => !IsAllowed(n.License, allowedIds, allowedExceptions)).ToArray();
+
+        if (violations.Length == 0)
+            return 0;
+
+        Console.WriteLine($"{violations.Length} packages not in allowlist:");
+        foreach (var v in violations)
+            Console.WriteLine($"  {v.Id} {v.Version} [{v.License}]");
+
+        return 1;
+    }
+
+    static bool IsAllowed(string license, HashSet<string> allowedIds, HashSet<string> allowedExceptions)
+    {
+        if (license == NulicLicense.NOASSERTION) return false;
+
+        foreach (var part in license.Split([" AND ", " OR "], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var component = part.Trim();
+            var withIdx = component.IndexOf(" WITH ", StringComparison.OrdinalIgnoreCase);
+
+            string baseId;
+            string? exception;
+
+            if (withIdx >= 0)
+            {
+                baseId = component[..withIdx].Trim();
+                exception = "WITH " + component[(withIdx + " WITH ".Length)..].Trim();
+            }
+            else
+            {
+                baseId = component;
+                exception = null;
+            }
+
+            var componentAllowed = allowedIds.Contains(baseId)
+                || (exception != null && allowedExceptions.Contains(exception));
+
+            if (!componentAllowed) return false;
+        }
+
+        return true;
     }
 
     static NugetMetadata[] ApplyIgnore(NugetMetadata[] nugets, string[] patterns)
