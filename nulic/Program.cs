@@ -41,10 +41,10 @@ internal class Program
             Description = "Solution-file, project-file or folder",
             DefaultValueFactory = _ => "."
         };
-        var logLevel = new Option<LogEventLevel>("--log-level")
+        var logLevel = new Option<LogEventLevel?>("--log-level")
         {
             Description = "Minimum log level: Verbose, Debug, Information, Warning, Error, Fatal.",
-            DefaultValueFactory = _ => LogEventLevel.Information
+            DefaultValueFactory = _ => null
         };
         logLevel.Aliases.Add("-l");
 
@@ -58,9 +58,9 @@ internal class Program
 
         var ignore = new Option<string[]>("--ignore")
         {
-            Description = "Ignore packages by ID glob, author glob (prefix 'author:'), or special flags. " +
+            Description = "Ignore packages by ID glob (prefix 'id:' optional), author glob (prefix 'author:'), or special flags. " +
                           "Flags: 'developmentDependency' (packages.config), 'PrivateAssets' (SDK-style PrivateAssets=all). " +
-                          "Repeatable. E.g: --ignore developmentDependency --ignore PrivateAssets --ignore *Longship.Cruises* --ignore author:*Erik the Red*",
+                          "Repeatable. E.g: --ignore developmentDependency --ignore PrivateAssets --ignore id:*Longship* --ignore author:*Erik the Red*",
             AllowMultipleArgumentsPerToken = false,
         };
         ignore.Aliases.Add("-i");
@@ -89,23 +89,31 @@ internal class Program
 
         return rootCommand;
     }
-    static async Task<int> Process(string path, LogEventLevel logLevel = LogEventLevel.Information, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
+    static async Task<int> Process(string path, LogEventLevel? logLevel = null, string[]? exclude = null, string[]? ignore = null, string[]? allow = null)
     {
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Is(logLevel)
-            .WriteTo.Console()
-            .CreateLogger();
-
         var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
         ProgramSettings.Load(solutionDir);
 
-        var projects = MSBuildProject.LoadFrom(path, exclude);
+        var settings = ProgramSettings.Settings;
+
+        // CLI wins for log level; file default otherwise
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Is(logLevel ?? settings.LogLevel ?? LogEventLevel.Information)
+            .WriteTo.Console()
+            .CreateLogger();
+
+        // Arrays merge: file values + CLI values
+        var effectiveExclude = (settings.Exclude ?? []).Concat(exclude ?? []).ToArray();
+        var effectiveIgnore  = (settings.Ignore  ?? []).Concat(ignore  ?? []).ToArray();
+        var effectiveAllow   = (settings.Allow   ?? []).Concat(allow   ?? []).ToArray();
+
+        var projects = MSBuildProject.LoadFrom(path, effectiveExclude.Length > 0 ? effectiveExclude : null);
 
         Log.Information($"Found {projects.Count()} project(s) in {path}.");
 
-        bool ignoreDevDep = ignore?.Contains("developmentDependency", StringComparer.OrdinalIgnoreCase) ?? false;
-        bool ignorePrivate = ignore?.Contains("PrivateAssets", StringComparer.OrdinalIgnoreCase) ?? false;
-        var patternIgnore = ignore?.Where(i =>
+        bool ignoreDevDep = effectiveIgnore.Contains("developmentDependency", StringComparer.OrdinalIgnoreCase);
+        bool ignorePrivate = effectiveIgnore.Contains("PrivateAssets", StringComparer.OrdinalIgnoreCase);
+        var patternIgnore = effectiveIgnore.Where(i =>
             !i.Equals("developmentDependency", StringComparison.OrdinalIgnoreCase) &&
             !i.Equals("PrivateAssets", StringComparison.OrdinalIgnoreCase)).ToArray();
 
@@ -116,11 +124,18 @@ internal class Program
         if (ignoredIds.Count > 0)
             nugets = nugets.Where(n => !ignoredIds.Contains(n.Id)).ToArray();
 
-        if (patternIgnore?.Length > 0)
+        if (patternIgnore.Length > 0)
             nugets = ApplyIgnore(nugets, patternIgnore);
 
         // Apply overrides from nulic.json: patch matching packages, inject new entries
-        var overrides = ProgramSettings.Settings.Overrides;
+        // Overrides whose id is in the ignore list are skipped (natural extension of ignore semantics)
+        bool IsIgnored(string id) => ignoredIds.Contains(id) ||
+            patternIgnore
+                .Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
+                .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
+                .Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, id, ignoreCase: true));
+
+        var overrides = ProgramSettings.Settings.Overrides.Where(o => !IsIgnored(o.Id));
         var injected = new List<NugetMetadata>();
         foreach (var o in overrides)
         {
@@ -162,8 +177,8 @@ internal class Program
         foreach (var p in problems)
             Log.Warning("NOASSERTION: {id} {version}", p.Id, p.Version);
 
-        if (allow?.Length > 0)
-            return ApplyAllow(nugets, allow);
+        if (effectiveAllow.Length > 0)
+            return ApplyAllow(nugets, effectiveAllow);
 
         return 0;
     }
@@ -222,7 +237,10 @@ internal class Program
 
     static NugetMetadata[] ApplyIgnore(NugetMetadata[] nugets, string[] patterns)
     {
-        var idPatterns = patterns.Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase)).ToArray();
+        var idPatterns = patterns
+            .Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
+            .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
+            .ToArray();
         var authorPatterns = patterns
             .Where(p => p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
             .Select(p => p["author:".Length..])

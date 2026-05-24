@@ -1,4 +1,5 @@
 ﻿using Serilog;
+using Serilog.Events;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -17,6 +18,10 @@ internal record PackageOverride
 
 internal class NulicSettings
 {
+    public LogEventLevel? LogLevel { get; set; }
+    public string[]? Exclude { get; set; }
+    public string[]? Ignore { get; set; }
+    public string[]? Allow { get; set; }
     public List<PackageOverride> Overrides { get; set; } = new();
 }
 
@@ -26,7 +31,30 @@ internal class ProgramSettings
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    static readonly NulicSettings _default = new()
+    {
+        LogLevel = LogEventLevel.Information,
+        Exclude = [@"**\*test*", "demo-project"],
+        Ignore = ["developmentDependency", "PrivateAssets", "id:*Longship*", "author:*Leif*"],
+        Allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "MS-PL", "Unlicense", "WITH LicenseRef-linking-exception"],
+        Overrides =
+        [
+            new PackageOverride
+            {
+                Id = "Longship.Cruises",
+                Version = "1002.0.1+vinland",
+                License = "LicenseRef-Axe-Enforced",
+                LicenseUrl = "licenses/DANEGELD_TERMS.txt",
+                Authors = ["Leif Erikson"],
+                ProjectUrl = "https://longshipcruises.no",
+                Copyright = "Copyright © 982 Erik the Red. All oceans reserved."
+            }
+        ]
     };
 
     public static NulicSettings Settings { get; private set; } = new();
@@ -47,7 +75,7 @@ internal class ProgramSettings
             Log.Information("No nulic.json found — creating default");
             try
             {
-                File.WriteAllText(file.FullName, JsonSerializer.Serialize(new NulicSettings(), _jsonOptions));
+                File.WriteAllText(file.FullName, JsonSerializer.Serialize(_default, _jsonOptions));
             }
             catch (Exception ex)
             {
