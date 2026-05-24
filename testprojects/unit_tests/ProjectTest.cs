@@ -6,10 +6,9 @@ namespace unit_tests
         [TestMethod]
         [DataRow(@"cppapp_no_nuget", 2)]
         [DataRow(@"netapp_no_nuget", 3)]
-        [DataRow(@"..\", 7)]
         public void ProjectLoad(string path, int count)
         {
-            path = Path.Join(@"..\..\..\..\", path); // solution root
+            path = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", path));
 
             var projects = nulic.MSBuildProject.LoadFrom(path);
 

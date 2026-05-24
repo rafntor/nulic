@@ -2,7 +2,22 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- dotnet tool packaging -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nulic</ToolCommandName>
+    <!-- NuGet package metadata -->
+    <PackageId>nulic</PackageId>
+    <Authors>Tore Fuglestad</Authors>
+    <Description>NuGet license disclosure tool — collects and produces a license package for all NuGet dependencies.</Description>
+    <PackageTags>nuget license disclosure spdx</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- MinVer: version derived from git tags (e.g. tag v1.0.0 => version 1.0.0) -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\README.md')" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" />
@@ -12,6 +27,10 @@
     <PackageReference Include="Serilog.Sinks.Console" />
     <PackageReference Include="System.CommandLine" />
     <PackageReference Include="Textify" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MinVer" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>

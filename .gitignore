@@ -1,6 +1,8 @@
 
 packages/
 licenses/
+nupkg/
+nulic.json
 
 # Build results
 [Dd]ebug/
