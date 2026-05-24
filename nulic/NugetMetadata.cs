@@ -28,10 +28,10 @@ internal class NugetMetadata
     //
     // *** first the unmodified info from manifest
     //
-    public string Id => _manifest.Id;
-    public NuGetVersion Version => _manifest.Version;
+    public string Id => _manifest.Id!;
+    public NuGetVersion Version => _manifest.Version!;
     public IEnumerable<string> Authors => _override?.Authors ?? _manifest.Authors.Select(a => a.Trim());
-    public Uri? ProjectUrl => (_override?.ProjectUrl is string p ? new Uri(p) : null) ?? _manifest.ProjectUrl ?? _apiProjectUrl;
+    public Uri? ProjectUrl => _override?.ProjectUrl is string p ? new Uri(p) : _manifest.ProjectUrl ?? _apiProjectUrl;
     //
     // *** next the potentially augmented info from discovery
     //
@@ -186,7 +186,7 @@ internal class NugetMetadata
 
             licenses = embedded.Any()
                 ? embedded
-                : await DownloadLicenses(license_data.LicenseExpression, license_root);
+                : await DownloadLicenses(license_data.LicenseExpression!, license_root);
 
             // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
             licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
@@ -247,7 +247,7 @@ internal class NugetMetadata
     }
     Task<NulicLicense> CopyEmbeddedLicenseFile(string packagefile, DirectoryInfo destination)
     {
-        var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
+        var identity = new PackageIdentity(_manifest.Id!, _manifest.Version);
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
@@ -267,7 +267,7 @@ internal class NugetMetadata
     }
     async Task<IEnumerable<NulicLicense>> CopySupplementaryFiles(DirectoryInfo destination)
     {
-        var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
+        var identity = new PackageIdentity(_manifest.Id!, _manifest.Version);
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
@@ -286,7 +286,7 @@ internal class NugetMetadata
     }
     async Task<IEnumerable<NulicLicense>> CopyEmbeddedLicenseFiles(DirectoryInfo destination, bool licenseOnly = false)
     {
-        var identity = new PackageIdentity(_manifest.Id, _manifest.Version);
+        var identity = new PackageIdentity(_manifest.Id!, _manifest.Version);
 
         var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
 
