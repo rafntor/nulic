@@ -90,7 +90,7 @@ internal class Program
 
         var projects = MSBuildProject.LoadFrom(path, exclude.Length > 0 ? exclude : null);
 
-        Log.Information($"Found {projects.Count()} project(s) in {path}.");
+        Log.Information("Found {count} project(s) in {path}.", projects.Count(), path);
 
         bool ignoreDevDep = ignore.Contains("developmentDependency", StringComparer.OrdinalIgnoreCase);
         bool ignorePrivate = ignore.Contains("PrivateAssets", StringComparer.OrdinalIgnoreCase);
@@ -110,13 +110,11 @@ internal class Program
 
         // Apply overrides from nulic.json: patch matching packages, inject new entries
         // Overrides whose id is in the ignore list are skipped (natural extension of ignore semantics)
+        var idPats = IdPatterns(patternIgnore);
         bool IsIgnored(string id) => ignoredIds.Contains(id) ||
-            patternIgnore
-                .Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
-                .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
-                .Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, id, ignoreCase: true));
+            idPats.Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, id, ignoreCase: true));
 
-        var overrides = ProgramSettings.Settings.Overrides.Where(o => !IsIgnored(o.Id));
+        var overrides = settings.Overrides.Where(o => !IsIgnored(o.Id));
         var injected = new List<NugetMetadata>();
         foreach (var o in overrides)
         {
@@ -132,8 +130,7 @@ internal class Program
         if (injected.Count > 0)
             nugets = nugets.Concat(injected).ToArray();
 
-        string? dir = File.Exists(path) ? Path.GetDirectoryName(path) : path;
-        var license_root = new DirectoryInfo(Path.Join(dir, "licenses"));
+        var license_root = new DirectoryInfo(Path.Join(solutionDir.FullName, "licenses"));
 
         try
         {
@@ -218,11 +215,8 @@ internal class Program
 
     static NugetMetadata[] ApplyIgnore(NugetMetadata[] nugets, string[] patterns)
     {
-        var idPatterns = patterns
-            .Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
-            .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
-            .ToArray();
-        var authorPatterns = patterns
+        var idPats = IdPatterns(patterns);
+        var authorPats = patterns
             .Where(p => p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
             .Select(p => p["author:".Length..])
             .ToArray();
@@ -232,19 +226,24 @@ internal class Program
 
         return nugets.Where(n =>
         {
-            if (Matches(n.Id, idPatterns))
+            if (Matches(n.Id, idPats))
             {
-                Log.Information($"Ignored: {n.Id} {n.Version} (id match)");
+                Log.Information("Ignored: {id} {version} (id match)", n.Id, n.Version);
                 return false;
             }
-            if (n.Authors.Any() && n.Authors.All(a => Matches(a, authorPatterns)))
+            if (n.Authors.Any() && n.Authors.All(a => Matches(a, authorPats)))
             {
-                Log.Information($"Ignored: {n.Id} {n.Version} (author match)");
+                Log.Information("Ignored: {id} {version} (author match)", n.Id, n.Version);
                 return false;
             }
             return true;
         }).ToArray();
     }
+
+    static string[] IdPatterns(string[] patterns) => patterns
+        .Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
+        .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
+        .ToArray();
 
     class NuGetVersionConverter : JsonConverter<NuGetVersion>
     {

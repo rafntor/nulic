@@ -30,8 +30,7 @@ internal class ProgramSettings
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-        Converters = { new JsonStringEnumConverter() }
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     static readonly NulicSettings _default = new()
@@ -74,7 +73,7 @@ internal class ProgramSettings
             Log.Information("No nulic.json found — creating default");
             try
             {
-                File.WriteAllText(file.FullName, JsonSerializer.Serialize(_default, _jsonOptions));
+                File.WriteAllText(file.FullName, SerializeDefault());
             }
             catch (Exception ex)
             {
