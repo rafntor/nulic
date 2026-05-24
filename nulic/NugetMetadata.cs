@@ -1,4 +1,5 @@
 ﻿using NuGet.Configuration;
+using NuGet.LibraryModel;
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Packaging.Licenses;
@@ -370,11 +371,14 @@ internal class NugetMetadata
 
         if (File.Exists(package_config))
         {
-            using var stream = File.OpenRead(package_config);
+            List<PackageReference> packages;
+            using (var stream = File.OpenRead(package_config))
+                packages = new PackagesConfigReader(stream).GetPackages().ToList();
 
-            var reader = new PackagesConfigReader(stream);
+            foreach (var p in packages.Where(p => p.IsDevelopmentDependency))
+                Log.Debug("Skipping development dependency {Id} {Version}", p.PackageIdentity.Id, p.PackageIdentity.Version);
 
-            return reader.GetPackages().Select(p => p.PackageIdentity);
+            return packages.Where(p => !p.IsDevelopmentDependency).Select(p => p.PackageIdentity);
         }
         else
         {
@@ -384,7 +388,19 @@ internal class NugetMetadata
             {
                 var lock_file = new LockFileFormat().Read(project_assets);
 
-                return lock_file.Libraries.Where(l => l.Type == "package").Select(l => new PackageIdentity(l.Name, l.Version));
+                var dev_deps = lock_file.PackageSpec?.TargetFrameworks
+                    .SelectMany(tf => tf.Dependencies)
+                    .Where(d => d.SuppressParent == LibraryIncludeFlags.All)
+                    .Select(d => d.Name)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var name in dev_deps)
+                    Log.Debug("Skipping development dependency {Id}", name);
+
+                return lock_file.Libraries
+                    .Where(l => l.Type == "package" && !dev_deps.Contains(l.Name))
+                    .Select(l => new PackageIdentity(l.Name, l.Version));
             }
             else if (project.IsSdkStyle)
             {
