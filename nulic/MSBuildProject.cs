@@ -35,7 +35,7 @@ internal class MSBuildProject
             result.RemoveAll(p =>
             {
                 if (!IsExcluded(p.FilePath.FullName, excludePatterns)) return false;
-                Log.Information($"Excluded: {Path.GetRelativePath(Environment.CurrentDirectory, p.FilePath.FullName)}");
+                Log.Information("Excluded: {path}", Path.GetRelativePath(Environment.CurrentDirectory, p.FilePath.FullName));
                 return true;
             });
         }
@@ -51,14 +51,13 @@ internal class MSBuildProject
     }
     static void LoadFrom(DirectoryInfo dir, IList<MSBuildProject> list)
     {
-        var files = dir.EnumerateFiles("*.sln", SearchOption.TopDirectoryOnly).ToList();
+        string[] extensions = { "*.sln", "*.csproj", "*.vbproj", "*.fsproj", "*.vcxproj" };
 
-        if (files.Count == 0) files = dir.EnumerateFiles("*.csproj").ToList();
-        if (files.Count == 0) files = dir.EnumerateFiles("*.vbproj").ToList();
-        if (files.Count == 0) files = dir.EnumerateFiles("*.fsproj").ToList();
-        if (files.Count == 0) files = dir.EnumerateFiles("*.vcxproj").ToList();
-
-        LoadFrom(files, list);
+        foreach (var ext in extensions)
+        {
+            var files = dir.EnumerateFiles(ext, SearchOption.TopDirectoryOnly).ToList();
+            if (files.Count > 0) { LoadFrom(files, list); return; }
+        }
     }
     static void LoadFrom(IEnumerable<FileInfo> files, IList<MSBuildProject> list)
     {

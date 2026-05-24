@@ -44,15 +44,14 @@ internal class LicenseDownload
         {
             string redirect = result.LicenseUrl != licenseurl ? $" (via {result.LicenseUrl})" : "";
 
-            Log.Information($"Download from {licenseurl} OK!{redirect}");
+            Log.Information("Download from {url} OK!{redirect}", licenseurl, redirect);
         }
 
         return result;
     }
     static async Task<NulicLicense?> DownloadFrom(Download download, HttpResponseMessage? rsp)
     {
-        var host = download.Url.Host;
-        if (host.StartsWith("www.")) host = host[4..];
+        var host = NormalizeHost(download.Url);
 
         if (host == "licenses.nuget.org")
         {
@@ -91,12 +90,14 @@ internal class LicenseDownload
 
         return await NulicLicense.FindOrCreate(download_task, download.Dest, download.Url);
     }
+    internal static string NormalizeHost(Uri uri)
+    {
+        var host = uri.Host;
+        return host.StartsWith("www.") ? host[4..] : host;
+    }
     static bool LookupFileLinkFrom(Download download)
     {
-        var host = download.Url.Host;
-
-        if (host.StartsWith("www."))
-            host = host.Substring(4);
+        var host = NormalizeHost(download.Url);
 
         if (host == "raw.githubusercontent.com")
             return true;
@@ -118,10 +119,7 @@ internal class LicenseDownload
     }
     static bool LookupHtmlFlattenable(Download download)
     {
-        var host = download.Url.Host;
-
-        if (host.StartsWith("www."))
-            host = host.Substring(4);
+        var host = NormalizeHost(download.Url);
 
         if (host == "dotnet.microsoft.com" && download.Url.AbsolutePath == "/en-us/dotnet_library_license.htm")
         {
@@ -134,10 +132,7 @@ internal class LicenseDownload
     }
     static string? LookupHtmlElementFrom(Download download)
     {
-        var host = download.Url.Host;
-
-        if (host.StartsWith("www."))
-            host = host.Substring(4);
+        var host = NormalizeHost(download.Url);
 
         if (host == "opensource.org")
         {

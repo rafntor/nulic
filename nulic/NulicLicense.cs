@@ -47,7 +47,7 @@ internal class NulicLicense
         Filepath = filepath;
 
         if (filepath != _null_file)
-            Log.Information($"creating ({filepath})");
+            Log.Information("creating ({path})", filepath);
     }
     async Task InitializeOnce(Func<Task<string>> text_getter)
     {

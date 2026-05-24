@@ -152,13 +152,13 @@ internal class NugetMetadata
     void LogException(Exception? ex, Uri? url)
     {
         if (ex is HttpRequestException hex)
-            Log.Error($"{ToString()} : Download failed ({hex.StatusCode}) - {url}");
+            Log.Error("{pkg} : Download failed ({status}) - {url}", ToString(), hex.StatusCode, url);
 
         else if (ex is LicenseDownload.UnknownUrlException)
-            Log.Error($"{ToString()} : Unknown URL (dont know how to download) - {url}");
+            Log.Error("{pkg} : Unknown URL (dont know how to download) - {url}", ToString(), url);
 
         else if (ex != null)
-            Log.Fatal(ex, $"{ToString()} : License Init failed ({url})");
+            Log.Fatal(ex, "{pkg} : License Init failed ({url})", ToString(), url);
     }
     async Task<IEnumerable<NulicLicense>> CollectLicenses(DirectoryInfo license_root)
     {
@@ -182,14 +182,14 @@ internal class NugetMetadata
         {
             // When a package declares an SPDX expression, prefer any embedded license file
             // (more authentic, may include project-specific wording) over the canonical spdx.org text.
-            var embedded = await CopyEmbeddedLicenseFiles(license_root, licenseOnly: true);
+            var embedded = await CopyEmbeddedFiles(license_root, ["*license*"], warnIfMissing: true);
 
             licenses = embedded.Any()
                 ? embedded
                 : await DownloadLicenses(license_data.LicenseExpression!, license_root);
 
             // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
-            licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
+            licenses = licenses.Concat(await CopyEmbeddedFiles(license_root, ["*thirdpartynotice*.*", "*notice*.*", "*credit*.*"]));
         }
         else if (license_data?.Type == LicenseType.File)
         {
@@ -198,7 +198,7 @@ internal class NugetMetadata
             licenses = licenses.Append(license);
 
             // also collect any supplementary NOTICE / THIRD_PARTY_NOTICES files
-            licenses = licenses.Concat(await CopySupplementaryFiles(license_root));
+            licenses = licenses.Concat(await CopyEmbeddedFiles(license_root, ["*thirdpartynotice*.*", "*notice*.*", "*credit*.*"]));
         }
         else if ((_manifest.LicenseUrl ?? _apiLicenseUrl) is Uri url) // legacy mode 'LicenceUrl' ?
         {
@@ -215,7 +215,7 @@ internal class NugetMetadata
 
         if (!licenses.Any()) // fallback: scan package for undeclared license files
         {
-            licenses = await CopyEmbeddedLicenseFiles(license_root);
+            licenses = await CopyEmbeddedFiles(license_root, ["*license*", "*thirdpartynotice*.*", "*credit*.*"], warnIfMissing: true);
         }
 
         if (!licenses.Any()) // last resort: try GitHub LICENSE file from ProjectUrl
@@ -253,7 +253,7 @@ internal class NugetMetadata
 
         if (package is null)
         {
-            Log.Warning($"{this} : package not found in local cache, cannot copy embedded license file '{packagefile}'");
+            Log.Warning("{pkg} : package not found in local cache, cannot copy embedded license file '{file}'", this, packagefile);
             return Task.FromResult(NulicLicense.NotFound);
         }
 
@@ -265,26 +265,7 @@ internal class NugetMetadata
 
         return FileSystemName.MatchesSimpleExpression(pattern, file.Name);
     }
-    async Task<IEnumerable<NulicLicense>> CopySupplementaryFiles(DirectoryInfo destination)
-    {
-        var identity = new PackageIdentity(_manifest.Id!, _manifest.Version);
-
-        var package = GlobalPackagesFolderUtility.GetPackage(identity, PackagesFolder);
-
-        if (package is null)
-            return Enumerable.Empty<NulicLicense>();
-
-        var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
-
-        string[] candidates = { "*thirdpartynotice*.*", "*notice*.*", "*credit*.*" };
-
-        files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
-
-        var jobs = files.Select(f => CopyEmbeddedLicenseFile(package, f, destination));
-
-        return await Task.WhenAll(jobs);
-    }
-    async Task<IEnumerable<NulicLicense>> CopyEmbeddedLicenseFiles(DirectoryInfo destination, bool licenseOnly = false)
+    async Task<IEnumerable<NulicLicense>> CopyEmbeddedFiles(DirectoryInfo destination, string[] candidates, bool warnIfMissing = false)
     {
         var identity = new PackageIdentity(_manifest.Id!, _manifest.Version);
 
@@ -292,29 +273,23 @@ internal class NugetMetadata
 
         if (package is null)
         {
-            Log.Warning($"{this} : package not found in local cache, skipping embedded file scan");
+            if (warnIfMissing)
+                Log.Warning("{pkg} : package not found in local cache, skipping embedded file scan", this);
             return Enumerable.Empty<NulicLicense>();
         }
 
         var files = await package.PackageReader.GetFilesAsync(CancellationToken.None);
 
-        string[] candidates = licenseOnly
-            ? new[] { "*license*" }
-            : new[] { "*license*", "*thirdpartynotice*.*", "*credit*.*" };
-
         files = files.Where(f => candidates.Any(c => NameMatch(f, c)));
 
-        var jobs = files.Select(f => CopyEmbeddedLicenseFile(package, f, destination));
-
-        return await Task.WhenAll(jobs);
+        return await Task.WhenAll(files.Select(f => CopyEmbeddedLicenseFile(package, f, destination)));
     }
     async Task<IEnumerable<NulicLicense>> TryDownloadFromProjectUrl(DirectoryInfo license_root)
     {
         if (_manifest.ProjectUrl is not Uri projectUrl)
             return Enumerable.Empty<NulicLicense>();
 
-        var host = projectUrl.Host;
-        if (host.StartsWith("www.")) host = host[4..];
+        var host = LicenseDownload.NormalizeHost(projectUrl);
 
         if (host != "github.com")
             return Enumerable.Empty<NulicLicense>();
@@ -513,7 +488,7 @@ internal class NugetMetadata
         return Enumerable.Empty<PackageIdentity>();
     }
 
-    static string PackagesFolder = GetPackagesFolder();
+    static readonly string PackagesFolder = GetPackagesFolder();
     static string GetPackagesFolder()
     {
         var settings = Settings.LoadDefaultSettings(null);
