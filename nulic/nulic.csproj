@@ -11,12 +11,17 @@
     <Description>NuGet license disclosure tool — collects and produces a license package for all NuGet dependencies.</Description>
     <PackageTags>nuget license disclosure spdx</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/rafntor/nulic</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/rafntor/nulic</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <!-- MinVer: version derived from git tags (e.g. tag v1.0.0 => version 1.0.0) -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" Condition="Exists('..\README.md')" />
+    <None Include="..\LICENSE" Pack="true" PackagePath="\" Condition="Exists('..\LICENSE')" />
   </ItemGroup>
 
   <ItemGroup>
