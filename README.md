@@ -34,6 +34,7 @@ nulic [<path>] [options]
 | `-d`, `--show-defaults` | Print the default `nulic.json` to stdout and exit |
 | `-l`, `--log-level` | Log verbosity: `Verbose`, `Debug`, `Information` (default), `Warning`, `Error` |
 | `-m`, `--merge <dir>` | Merge a `licenses/` directory from another nulic-processed project (repeatable) |
+| `-o`, `--output <dir>` | Output folder for license files and report. Default: `<path>/licenses` |
 
 ### Examples
 
@@ -49,6 +50,9 @@ nulic --log-level Warning
 
 # Combine licenses from two sub-projects into one disclosure package
 nulic MyApp.sln --merge ../firmware/licenses --merge ../safety/licenses
+
+# Write output to a custom folder
+nulic MyApp.sln --output D:/artifacts/licenses
 ```
 
 ## nulic.json

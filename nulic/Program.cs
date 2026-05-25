@@ -60,12 +60,19 @@ internal class Program
         };
         merge.Aliases.Add("-m");
 
+        var output = new Option<string?>("--output")
+        {
+            Description = "Output folder for license files and report. Defaults to <path>/licenses.",
+        };
+        output.Aliases.Add("-o");
+
         var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
 
         rootCommand.Arguments.Add(path);
         rootCommand.Options.Add(logLevel);
         rootCommand.Options.Add(showDefaults);
         rootCommand.Options.Add(merge);
+        rootCommand.Options.Add(output);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
@@ -74,12 +81,12 @@ internal class Program
                 Console.WriteLine(ProgramSettings.SerializeDefault());
                 return 0;
             }
-            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(merge) ?? []);
+            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(merge) ?? [], parseResult.GetValue(output));
         });
 
         return rootCommand;
     }
-    static async Task<int> Process(string path, LogEventLevel? logLevel = null, string[]? merges = null)
+    static async Task<int> Process(string path, LogEventLevel? logLevel = null, string[]? merges = null, string? outputFolder = null)
     {
         var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
         ProgramSettings.Load(solutionDir);
@@ -136,7 +143,11 @@ internal class Program
         if (injected.Count > 0)
             nugets = nugets.Concat(injected).ToArray();
 
-        var license_root = new DirectoryInfo(Path.Join(solutionDir.FullName, "licenses"));
+        var license_root = outputFolder != null
+            ? new DirectoryInfo(outputFolder)
+            : new DirectoryInfo(Path.Join(solutionDir.FullName, "licenses"));
+
+        license_root.Create();
 
         try
         {
@@ -151,7 +162,6 @@ internal class Program
 
         var outfile = Path.Join(license_root.FullName, "licenses.json");
 
-        license_root.Create();
         await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
 
         LicenseEntry[] allEntries;
