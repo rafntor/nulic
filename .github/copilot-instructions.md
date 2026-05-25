@@ -14,9 +14,9 @@ Given a path it:
 
 1. Enumerates all packages (direct + transitive) from `project.assets.json` / `packages.config`
 2. Downloads or copies the actual license text for every package
-3. Writes a `licenses/` folder alongside the solution containing:
+3. Writes a `third-party-notices/` folder alongside the solution containing:
    - One license text file per unique license (shared across packages using the same license)
-   - A `licenses.json` manifest with full metadata per package
+   - A `nulic-packages.json` manifest with full metadata per package
 
 The goal is a complete, shippable artifact — every package must have an actual license file, not
 just an SPDX identifier.
@@ -45,9 +45,9 @@ Program.cs               CLI entry-point (System.CommandLine)
             └─ LicenseDownload   URL-based license fetching (handles transforms)
             └─ SpdxLookup        Downloads canonical SPDX license texts from spdx.org
             └─ CommonLicenses    Bundled text for the most common SPDX licenses
-LicenseEntry             DTO record — mirrors licenses.json schema; used by MarkdownReport and LicenseMerge
+LicenseEntry             DTO record — mirrors nulic-packages.json schema; used by MarkdownReport and LicenseMerge
 LicenseMerge             --merge implementation: copies files, unions packages, validates combined set
-MarkdownReport           Reads licenses.json → writes licenses.md (no NugetMetadata dependency)
+MarkdownReport           Reads nulic-packages.json → writes third-party-notices.md (no NugetMetadata dependency)
 ProgramSettings          Loads/creates nulic.json; PackageOverride; NulicSettings
 ```
 
@@ -65,7 +65,7 @@ Source priority per project:
 Priority order:
 1. **SPDX expression** (`<license type="expression">MIT</license>`):
    Download the canonical text for each leaf identifier from spdx.org (via `SpdxLookup`).
-   Standard licenses land directly in `licenses/` (shared). E.g. `licenses/MIT.txt`.
+   Standard licenses land directly in `third-party-notices/` (shared). E.g. `licenses/MIT.txt`.
 
 2. **Embedded file** (`<license type="file">LICENSE</license>`):
    Copy from the global NuGet packages cache into `licenses/<Id>.<Version>/LICENSE`.
@@ -108,10 +108,10 @@ first caller runs `InitializeOnce`, others await the semaphore.
 
 ## Key design decisions
 
-- **Always produce a file**: The output is not just metadata — every package in `licenses.json`
+- **Always produce a file**: The output is not just metadata — every package in `nulic-packages.json`
   has a corresponding file on disk. NOASSERTION means the file couldn't be obtained.
 - **Shared license files**: Standard licenses (MIT, Apache-2.0, etc.) are stored once at the root
-  of `licenses/`, not duplicated per package. Package-specific or unusual licenses go in
+  of `third-party-notices/`, not duplicated per package. Package-specific or unusual licenses go in
   `licenses/<Id>.<Version>/`.
 - **NOASSERTION** is the SPDX-standard sentinel for "could not determine". It is used both for
   the `License` field in JSON and to identify problem packages in console output.
@@ -120,13 +120,13 @@ first caller runs `InitializeOnce`, others await the semaphore.
   combinator is used (worst-case/most restrictive) when the relationship is unclear.
 - **`LicenseRef-*` are label-only**: User-defined identifiers (e.g. `LicenseRef-Softing-U-V2.02`)
   are never downloadable from spdx.org — `SpdxLookup` returns `NotFound` immediately, so no
-  phantom file entries appear in `licenses.json`.
+  phantom file entries appear in `nulic-packages.json`.
 - **`--merge` semantics**: Each sub-project runs nulic independently (its own CI gate). The merge
-  step combines `licenses.json` entries from all sources, copies missing license files, and
+  step combines `nulic-packages.json` entries from all sources, copies missing license files, and
   validates the combined set against the *target* project's allow list. Content-identical files are
   silently skipped; a content mismatch is a fatal error.
 
-## JSON output schema (`licenses.json`)
+## JSON output schema (`nulic-packages.json`)
 
 ```jsonc
 [
@@ -152,7 +152,7 @@ nulic [<path>] [--log-level <level>] [--show-defaults] [--merge <dir>]
 - `<path>`: solution file, project file, or folder (default: `.`)
 - `--log-level` / `-l`: minimum Serilog log level (Verbose/Debug/Information/Warning/Error/Fatal). Default: Information.
 - `--show-defaults` / `-d`: print the default `nulic.json` to stdout and exit (useful as a starting template)
-- `--merge` / `-m`: path to a `licenses/` directory from another nulic-processed project to merge in. Repeatable.
+- `--merge` / `-m`: path to a `third-party-notices/` directory from another nulic-processed project to merge in. Repeatable.
 
 Output is always written to `<solutiondir>/licenses/`.
 

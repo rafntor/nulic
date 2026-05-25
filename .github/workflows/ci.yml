@@ -31,7 +31,7 @@ jobs:
         run: dotnet nulic/bin/Release/net10.0/nulic.dll nulic/
 
       - name: Publish license report to job summary
-        run: cat nulic/licenses/licenses.md >> $GITHUB_STEP_SUMMARY
+        run: cat nulic/third-party-notices/third-party-notices.md >> $GITHUB_STEP_SUMMARY
 
       - name: Upload licenses as artifact
         uses: actions/upload-artifact@v4

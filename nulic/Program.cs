@@ -1,4 +1,4 @@
-﻿using Serilog;
+using Serilog;
 using Serilog.Events;
 using System.CommandLine;
 using System.Runtime.CompilerServices;
@@ -145,7 +145,7 @@ internal class Program
 
         var license_root = outputFolder != null
             ? new DirectoryInfo(outputFolder)
-            : new DirectoryInfo(Path.Join(solutionDir.FullName, "licenses"));
+            : new DirectoryInfo(Path.Join(solutionDir.FullName, "third-party-notices"));
 
         license_root.Create();
 
@@ -160,7 +160,7 @@ internal class Program
             Environment.Exit(-1);
         }
 
-        var outfile = Path.Join(license_root.FullName, "licenses.json");
+        var outfile = Path.Join(license_root.FullName, "nulic-packages.json");
 
         await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
 

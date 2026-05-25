@@ -10,9 +10,9 @@ Given a solution, project, or folder, nulic:
 
 1. Enumerates all NuGet packages — direct and transitive
 2. Downloads or copies the actual license text for each package
-3. Writes a `licenses/` folder next to the solution containing:
+3. Writes a `third-party-notices/` folder next to the solution containing:
    - One license text file per unique license (shared across packages using the same SPDX id)
-   - A `licenses.json` manifest with full metadata per package
+   - A `nulic-packages.json` manifest with full metadata per package
 
 The goal is a **complete, shippable artifact** — every package gets an actual license file on disk.
 
@@ -34,7 +34,7 @@ nulic [<path>] [options]
 | `-d`, `--show-defaults` | Print the default `nulic.json` to stdout and exit |
 | `-l`, `--log-level` | Log verbosity: `Verbose`, `Debug`, `Information` (default), `Warning`, `Error` |
 | `-m`, `--merge <dir>` | Merge a `licenses/` directory from another nulic-processed project (repeatable) |
-| `-o`, `--output <dir>` | Output folder for license files and report. Default: `<path>/licenses` |
+| `-o`, `--output <dir>` | Output folder for license files and report. Default: `<path>/third-party-notices` |
 
 ### Examples
 
@@ -125,7 +125,7 @@ Compound SPDX expressions (e.g. `MIT AND LicenseRef-foo`) must have every compon
 
 ## NOASSERTION
 
-If nulic cannot obtain or identify a license for a package, the `license` field in `licenses.json` is set to `NOASSERTION` and a warning is printed. Common causes:
+If nulic cannot obtain or identify a license for a package, the `license` field in `nulic-packages.json` is set to `NOASSERTION` and a warning is printed. Common causes:
 
 - The package has no license metadata and no recognizable license file
 - The license URL is dead or returns an unrecognizable format
@@ -149,33 +149,33 @@ When a product bundles multiple independently-built components (e.g. a main appl
 
 ```sh
 # Step 1: process each component independently (in their own CI)
-nulic HAL9000/           # produces HAL9000/licenses/
-nulic AE35Unit/          # produces AE35Unit/licenses/
+nulic HAL9000/           # produces HAL9000/third-party-notices/
+nulic AE35Unit/          # produces AE35Unit/third-party-notices/
 
 # Step 2: produce the combined disclosure for the product
-nulic Discovery/ --merge ../HAL9000/licenses --merge ../AE35Unit/licenses
+nulic Discovery/ --merge ../HAL9000/third-party-notices --merge ../AE35Unit/third-party-notices
 ```
 
 The merge step:
-- Reads `licenses.json` from each merged directory
-- Copies license files into the target `licenses/` folder (skips identical files, **errors on content mismatch**)
+- Reads `nulic-packages.json` from each merged directory
+- Copies license files into the target `third-party-notices/` folder (skips identical files, **errors on content mismatch**)
 - Unions all packages, deduplicating by `Id + Version`
 - Validates the combined set against the target project's `allow` list
-- Regenerates `licenses.md` from the combined data
+- Regenerates `third-party-notices.md` from the combined data
 
 Running `nulic` on the nulic repo itself produces (abbreviated):
 
 ```
-licenses/
+third-party-notices/
   MIT.txt                          # shared — AngleSharp, System.CommandLine, Textify, ...
   Apache-2.0.txt                   # shared — all NuGet.* packages, Serilog, ...
   Microsoft.Build.18.6.3/
     notices/THIRDPARTYNOTICES.txt  # supplementary file from the package
   ...                              # one entry per unique package
-  licenses.json
+  nulic-packages.json
 ```
 
-`licenses.json` entry (real example from nulic's own dependencies):
+`nulic-packages.json` entry (real example from nulic's own dependencies):
 
 ```jsonc
 {

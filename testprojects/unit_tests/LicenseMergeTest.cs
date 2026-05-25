@@ -20,7 +20,7 @@ public class LicenseMergeTest
     {
         var dir = new DirectoryInfo(Path.Join(tmpRoot, name));
         dir.Create();
-        File.WriteAllText(Path.Join(dir.FullName, "licenses.json"),
+        File.WriteAllText(Path.Join(dir.FullName, "nulic-packages.json"),
             JsonSerializer.Serialize(entries, _writeOptions));
         foreach (var kv in files ?? [])
         {
@@ -33,7 +33,7 @@ public class LicenseMergeTest
 
     static async Task<nulic.LicenseEntry[]> ReadJson(DirectoryInfo dir)
     {
-        var json = await File.ReadAllTextAsync(Path.Join(dir.FullName, "licenses.json"));
+        var json = await File.ReadAllTextAsync(Path.Join(dir.FullName, "nulic-packages.json"));
         return JsonSerializer.Deserialize<nulic.LicenseEntry[]>(json, _readOptions)!;
     }
 
@@ -173,13 +173,13 @@ public class LicenseMergeTest
         {
             var a = MakeLicenseDir(tmp.FullName, "A", []);
 
-            // B exists as directory but has no licenses.json
+            // B exists as directory but has no nulic-packages.json
             var b = new DirectoryInfo(Path.Join(tmp.FullName, "B"));
             b.Create();
 
             var (_, ok) = await nulic.LicenseMerge.Apply(a, [b.FullName]);
 
-            Assert.IsFalse(ok, "Missing licenses.json should produce ok=false");
+            Assert.IsFalse(ok, "Missing nulic-packages.json should produce ok=false");
         }
         finally { tmp.Delete(recursive: true); }
     }
@@ -201,7 +201,7 @@ public class LicenseMergeTest
             await nulic.LicenseMerge.Apply(a, [b.FullName]);
 
             var merged = await ReadJson(a);
-            Assert.AreEqual(2, merged.Length, "licenses.json should contain both packages");
+            Assert.AreEqual(2, merged.Length, "nulic-packages.json should contain both packages");
         }
         finally { tmp.Delete(recursive: true); }
     }

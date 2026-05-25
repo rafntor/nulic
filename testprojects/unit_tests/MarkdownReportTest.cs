@@ -15,7 +15,7 @@ public class MarkdownReportTest
     {
         var dir = new DirectoryInfo(tmpDir);
         dir.Create();
-        File.WriteAllText(Path.Join(tmpDir, "licenses.json"),
+        File.WriteAllText(Path.Join(tmpDir, "nulic-packages.json"),
             JsonSerializer.Serialize(entries, _writeOptions));
         return dir;
     }
@@ -27,7 +27,7 @@ public class MarkdownReportTest
         {
             var dir = WriteLicensesJson(tmp.FullName, entries);
             await nulic.MarkdownReport.Write(dir);
-            return await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+            return await File.ReadAllTextAsync(Path.Join(tmp.FullName, "third-party-notices.md"));
         }
         finally { tmp.Delete(recursive: true); }
     }
@@ -99,7 +99,7 @@ public class MarkdownReportTest
             File.WriteAllText(Path.Join(tmp.FullName, "MIT.txt"), "MIT license text");
 
             await nulic.MarkdownReport.Write(dir);
-            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "third-party-notices.md"));
 
             StringAssert.Contains(md, "[MIT](MIT.txt)",
                 "shared MIT.txt at root should be used even when LicenseFiles is empty");
@@ -225,7 +225,7 @@ public class MarkdownReportTest
             File.WriteAllText(Path.Join(tmp.FullName, "MIT.txt"), "MIT license text");
 
             await nulic.MarkdownReport.Write(dir);
-            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "third-party-notices.md"));
 
             StringAssert.Contains(md, "[MIT.txt](MIT.txt)");
         }
@@ -245,7 +245,7 @@ public class MarkdownReportTest
             File.WriteAllText(Path.Join(tmp.FullName, "MIT.txt"), "MIT license text");
 
             await nulic.MarkdownReport.Write(dir);
-            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "third-party-notices.md"));
 
             // MIT.txt should appear exactly once in the sections (deduplicated)
             var mitSection = md[(md.IndexOf("## MIT") + "## MIT".Length)..];
@@ -301,7 +301,7 @@ public class MarkdownReportTest
             ]);
 
             await nulic.MarkdownReport.Write(dir);
-            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "third-party-notices.md"));
 
             // Link URL must use forward slashes
             StringAssert.Contains(md, "(Pkg.A.1.0/LICENSE)");

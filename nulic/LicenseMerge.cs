@@ -9,7 +9,7 @@ internal static class LicenseMerge
 
     public static async Task<(LicenseEntry[]? Entries, bool Ok)> Apply(DirectoryInfo license_root, string[] merge_paths)
     {
-        var jsonPath = Path.Join(license_root.FullName, "licenses.json");
+        var jsonPath = Path.Join(license_root.FullName, "nulic-packages.json");
         var entries = JsonSerializer.Deserialize<LicenseEntry[]>(
             await File.ReadAllTextAsync(jsonPath), _readOptions)!.ToList();
 
@@ -26,10 +26,10 @@ internal static class LicenseMerge
                 continue;
             }
 
-            var bJsonPath = Path.Join(mergeDir.FullName, "licenses.json");
+            var bJsonPath = Path.Join(mergeDir.FullName, "nulic-packages.json");
             if (!File.Exists(bJsonPath))
             {
-                Log.Error("No licenses.json found at: {path}", bJsonPath);
+                Log.Error("No nulic-packages.json found at: {path}", bJsonPath);
                 ok = false;
                 continue;
             }

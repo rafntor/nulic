@@ -9,12 +9,12 @@ internal static class MarkdownReport
 
     public static async Task Write(DirectoryInfo license_root)
     {
-        var jsonPath = Path.Join(license_root.FullName, "licenses.json");
+        var jsonPath = Path.Join(license_root.FullName, "nulic-packages.json");
         var entries = JsonSerializer.Deserialize<LicenseEntry[]>(
             await File.ReadAllTextAsync(jsonPath), _readOptions) ?? [];
 
         var sorted = entries.OrderBy(e => e.Id, StringComparer.OrdinalIgnoreCase).ToArray();
-        var outfile = Path.Join(license_root.FullName, "licenses.md");
+        var outfile = Path.Join(license_root.FullName, "third-party-notices.md");
 
         await using var sw = new StreamWriter(outfile, append: false, System.Text.Encoding.UTF8);
 
