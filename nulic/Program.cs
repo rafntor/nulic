@@ -115,11 +115,11 @@ internal class Program
             nugets = nugets.Where(n => !ignoredIds.Contains(n.Id)).ToArray();
 
         if (patternIgnore.Length > 0)
-            nugets = ApplyIgnore(nugets, patternIgnore);
+            nugets = PackageFilter.ApplyIgnore(nugets, patternIgnore);
 
         // Apply overrides from nulic.json: patch matching packages, inject new entries
         // Overrides whose id is in the ignore list are skipped (natural extension of ignore semantics)
-        var idPats = IdPatterns(patternIgnore);
+        var idPats = PackageFilter.IdPatterns(patternIgnore);
         bool IsIgnored(string id) => ignoredIds.Contains(id) ||
             idPats.Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, id, ignoreCase: true));
 
@@ -183,94 +183,10 @@ internal class Program
             Log.Warning("NOASSERTION: {id} {version}", p.Id, p.Version);
 
         if (allow.Length > 0)
-            return ApplyAllow(allEntries, allow);
+            return PackageFilter.ApplyAllow(allEntries, allow);
 
         return 0;
     }
-
-    static int ApplyAllow(LicenseEntry[] entries, string[] allowed)
-    {
-        var allowedIds = new HashSet<string>(
-            allowed.Where(a => !a.StartsWith("WITH ", StringComparison.OrdinalIgnoreCase)),
-            StringComparer.OrdinalIgnoreCase);
-        var allowedExceptions = new HashSet<string>(
-            allowed.Where(a => a.StartsWith("WITH ", StringComparison.OrdinalIgnoreCase)),
-            StringComparer.OrdinalIgnoreCase);
-
-        var violations = entries.Where(e => !IsAllowed(e.License, allowedIds, allowedExceptions)).ToArray();
-
-        if (violations.Length == 0)
-            return 0;
-
-        foreach (var v in violations)
-            Log.Warning("Not in allowlist: {id} {version} [{license}]", v.Id, v.Version, v.License);
-
-        return 1;
-    }
-
-    static bool IsAllowed(string license, HashSet<string> allowedIds, HashSet<string> allowedExceptions)
-    {
-        if (license == NulicLicense.NOASSERTION) return false;
-
-        foreach (var part in license.Split([" AND ", " OR "], StringSplitOptions.RemoveEmptyEntries))
-        {
-            var component = part.Trim();
-            var withIdx = component.IndexOf(" WITH ", StringComparison.OrdinalIgnoreCase);
-
-            string baseId;
-            string? exception;
-
-            if (withIdx >= 0)
-            {
-                baseId = component[..withIdx].Trim();
-                exception = "WITH " + component[(withIdx + " WITH ".Length)..].Trim();
-            }
-            else
-            {
-                baseId = component;
-                exception = null;
-            }
-
-            var componentAllowed = allowedIds.Contains(baseId)
-                || (exception != null && allowedExceptions.Contains(exception));
-
-            if (!componentAllowed) return false;
-        }
-
-        return true;
-    }
-
-    static NugetMetadata[] ApplyIgnore(NugetMetadata[] nugets, string[] patterns)
-    {
-        var idPats = IdPatterns(patterns);
-        var authorPats = patterns
-            .Where(p => p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
-            .Select(p => p["author:".Length..])
-            .ToArray();
-
-        bool Matches(string value, string[] pats) => pats.Any(p =>
-            System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, value, ignoreCase: true));
-
-        return nugets.Where(n =>
-        {
-            if (Matches(n.Id, idPats))
-            {
-                Log.Information("Ignored: {id} {version} (id match)", n.Id, n.Version);
-                return false;
-            }
-            if (n.Authors.Any() && n.Authors.All(a => Matches(a, authorPats)))
-            {
-                Log.Information("Ignored: {id} {version} (author match)", n.Id, n.Version);
-                return false;
-            }
-            return true;
-        }).ToArray();
-    }
-
-    static string[] IdPatterns(string[] patterns) => patterns
-        .Where(p => !p.StartsWith("author:", StringComparison.OrdinalIgnoreCase))
-        .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
-        .ToArray();
 
     class NuGetVersionConverter : JsonConverter<NuGetVersion>
     {

@@ -1,0 +1,246 @@
+using System.Text.Json;
+
+namespace unit_tests;
+
+[TestClass]
+public class MarkdownReportTest
+{
+    static readonly JsonSerializerOptions _writeOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    static DirectoryInfo WriteLicensesJson(string tmpDir, nulic.LicenseEntry[] entries)
+    {
+        var dir = new DirectoryInfo(tmpDir);
+        dir.Create();
+        File.WriteAllText(Path.Join(tmpDir, "licenses.json"),
+            JsonSerializer.Serialize(entries, _writeOptions));
+        return dir;
+    }
+
+    static async Task<string> RunAndRead(nulic.LicenseEntry[] entries)
+    {
+        var tmp = Directory.CreateTempSubdirectory("nulic_md_");
+        try
+        {
+            var dir = WriteLicensesJson(tmp.FullName, entries);
+            await nulic.MarkdownReport.Write(dir);
+            return await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+        }
+        finally { tmp.Delete(recursive: true); }
+    }
+
+    // ── Table ──────────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task Table_contains_header()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.0.0", ["Alice"], null, null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "# Third-Party License Notices");
+        StringAssert.Contains(md, "| Package | Version | License | Authors |");
+    }
+
+    [TestMethod]
+    public async Task Table_row_plain_name_and_license()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.2.3", ["Alice"], null, null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "| Foo.Bar | 1.2.3 | MIT | Alice |");
+    }
+
+    [TestMethod]
+    public async Task Table_row_with_project_url_becomes_link()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.0.0", ["Alice"], "https://example.com", null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "[Foo.Bar](https://example.com)");
+    }
+
+    [TestMethod]
+    public async Task Table_row_with_license_url_becomes_link()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.0.0", ["Alice"], null, null, "MIT", "https://spdx.org/licenses/MIT", [])
+        ]);
+        StringAssert.Contains(md, "[MIT](https://spdx.org/licenses/MIT)");
+    }
+
+    [TestMethod]
+    public async Task Table_multiple_authors_joined_with_comma()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.0.0", ["Alice", "Bob"], null, null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "Alice, Bob");
+    }
+
+    [TestMethod]
+    public async Task Table_pipe_in_name_is_escaped()
+    {
+        var md = await RunAndRead([
+            new("Foo|Bar", "1.0.0", ["Alice"], null, null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, @"Foo\|Bar");
+    }
+
+    [TestMethod]
+    public async Task Table_entries_sorted_case_insensitively_by_id()
+    {
+        var md = await RunAndRead([
+            new("zlib", "1.0", [], null, null, "Zlib", null, []),
+            new("Newtonsoft.Json", "13.0", [], null, null, "MIT", null, []),
+            new("AngleSharp", "1.0", [], null, null, "MIT", null, []),
+        ]);
+        var nIdx  = md.IndexOf("Newtonsoft.Json", StringComparison.Ordinal);
+        var aIdx  = md.IndexOf("AngleSharp",      StringComparison.Ordinal);
+        var zIdx  = md.IndexOf("zlib",             StringComparison.Ordinal);
+        // AngleSharp < Newtonsoft.Json < zlib
+        Assert.IsTrue(aIdx < nIdx, "AngleSharp should come before Newtonsoft.Json");
+        Assert.IsTrue(nIdx < zIdx, "Newtonsoft.Json should come before zlib");
+    }
+
+    // ── Sections ───────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task Sections_grouped_by_license()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT",        null, []),
+            new("B", "1.0", [], null, null, "Apache-2.0", null, []),
+            new("C", "1.0", [], null, null, "MIT",        null, []),
+        ]);
+        // MIT section should list both A and C
+        var mitIdx = md.IndexOf("## MIT");
+        Assert.IsTrue(mitIdx >= 0, "MIT section missing");
+        var mitSection = md[mitIdx..];
+        StringAssert.Contains(mitSection[..mitSection.IndexOf("---")], "A 1.0");
+        StringAssert.Contains(mitSection[..mitSection.IndexOf("---")], "C 1.0");
+    }
+
+    [TestMethod]
+    public async Task Sections_NOASSERTION_appears_last()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, nulic.NulicLicense.NOASSERTION, null, []),
+            new("B", "1.0", [], null, null, "MIT",                          null, []),
+        ]);
+        var mitIdx          = md.IndexOf("## MIT",         StringComparison.Ordinal);
+        var noAssertionIdx  = md.IndexOf($"## {nulic.NulicLicense.NOASSERTION}", StringComparison.Ordinal);
+
+        Assert.IsTrue(mitIdx >= 0,         "MIT section missing");
+        Assert.IsTrue(noAssertionIdx >= 0, "NOASSERTION section missing");
+        Assert.IsTrue(mitIdx < noAssertionIdx, "NOASSERTION should come after MIT");
+    }
+
+    [TestMethod]
+    public async Task Sections_no_license_file_shows_placeholder()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, nulic.NulicLicense.NOASSERTION, null, [])
+        ]);
+        StringAssert.Contains(md, "*(no license file available)*");
+    }
+
+    [TestMethod]
+    public async Task Sections_license_file_shown_as_link()
+    {
+        var tmp = Directory.CreateTempSubdirectory("nulic_md_");
+        try
+        {
+            var dir = WriteLicensesJson(tmp.FullName, [
+                new("A", "1.0", [], null, null, "MIT", null, ["MIT.txt"])
+            ]);
+            // Create the referenced file so MarkdownReport doesn't fail on missing files
+            File.WriteAllText(Path.Join(tmp.FullName, "MIT.txt"), "MIT license text");
+
+            await nulic.MarkdownReport.Write(dir);
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+
+            StringAssert.Contains(md, "[MIT.txt](MIT.txt)");
+        }
+        finally { tmp.Delete(recursive: true); }
+    }
+
+    [TestMethod]
+    public async Task Sections_dedup_shared_license_file_across_packages()
+    {
+        var tmp = Directory.CreateTempSubdirectory("nulic_md_");
+        try
+        {
+            var dir = WriteLicensesJson(tmp.FullName, [
+                new("A", "1.0", [], null, null, "MIT", null, ["MIT.txt"]),
+                new("B", "2.0", [], null, null, "MIT", null, ["MIT.txt"]),
+            ]);
+            File.WriteAllText(Path.Join(tmp.FullName, "MIT.txt"), "MIT license text");
+
+            await nulic.MarkdownReport.Write(dir);
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+
+            // MIT.txt should appear exactly once in the sections (deduplicated)
+            var mitSection = md[(md.IndexOf("## MIT") + "## MIT".Length)..];
+            var occurrences = 0;
+            var search = "[MIT.txt]";
+            var idx = 0;
+            while ((idx = mitSection.IndexOf(search, idx)) >= 0) { occurrences++; idx++; }
+            Assert.AreEqual(1, occurrences, "MIT.txt link should appear exactly once (deduplicated)");
+        }
+        finally { tmp.Delete(recursive: true); }
+    }
+
+    [TestMethod]
+    public async Task Sections_copyright_shown_as_blockquote()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, "Copyright © 2024 Alice", "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "> Copyright © 2024 Alice");
+    }
+
+    [TestMethod]
+    public async Task Empty_entries_produces_valid_empty_report()
+    {
+        var md = await RunAndRead([]);
+        StringAssert.Contains(md, "# Third-Party License Notices");
+        // Should not throw
+    }
+
+    [TestMethod]
+    public async Task Table_empty_authors_produces_no_extra_commas()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.0.0", [], null, null, "MIT", null, [])
+        ]);
+        // Authors column should be empty (no ", " artifact)
+        Assert.IsFalse(md.Contains(", ,"), "Should not have extra commas for empty authors");
+    }
+
+    [TestMethod]
+    public async Task Sections_backslash_path_converted_to_forward_slash_in_link()
+    {
+        var tmp = Directory.CreateTempSubdirectory("nulic_md_");
+        try
+        {
+            // Simulate a package-specific license file with backslash separator (Windows path)
+            var subDir = Path.Join(tmp.FullName, "Pkg.A.1.0");
+            Directory.CreateDirectory(subDir);
+            File.WriteAllText(Path.Join(subDir, "LICENSE"), "license text");
+
+            var dir = WriteLicensesJson(tmp.FullName, [
+                new("Pkg.A", "1.0.0", [], null, null, "MIT", null, [@"Pkg.A.1.0\LICENSE"])
+            ]);
+
+            await nulic.MarkdownReport.Write(dir);
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+
+            // Link URL must use forward slashes
+            StringAssert.Contains(md, "(Pkg.A.1.0/LICENSE)");
+        }
+        finally { tmp.Delete(recursive: true); }
+    }
+}
