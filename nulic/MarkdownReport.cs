@@ -1,11 +1,24 @@
+using System.Text.Json;
+
 namespace nulic;
 
 internal static class MarkdownReport
 {
-    public static async Task Write(IEnumerable<NugetMetadata> nugets, DirectoryInfo license_root)
+    static readonly JsonSerializerOptions _readOptions = new()
     {
+        PropertyNameCaseInsensitive = true,
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
+    public static async Task Write(DirectoryInfo license_root)
+    {
+        var jsonPath = Path.Join(license_root.FullName, "licenses.json");
+        var entries = JsonSerializer.Deserialize<LicenseEntry[]>(
+            await File.ReadAllTextAsync(jsonPath), _readOptions) ?? [];
+
+        var sorted = entries.OrderBy(e => e.Id, StringComparer.OrdinalIgnoreCase).ToArray();
         var outfile = Path.Join(license_root.FullName, "licenses.md");
-        var sorted = nugets.OrderBy(n => n.Id, StringComparer.OrdinalIgnoreCase).ToArray();
 
         await using var sw = new StreamWriter(outfile, append: false, System.Text.Encoding.UTF8);
 
@@ -13,31 +26,34 @@ internal static class MarkdownReport
         await WriteSections(sw, sorted, license_root);
     }
 
-    static async Task WriteTable(StreamWriter sw, NugetMetadata[] nugets)
+    static async Task WriteTable(StreamWriter sw, LicenseEntry[] entries)
     {
         await sw.WriteLineAsync("# Third-Party License Notices");
         await sw.WriteLineAsync();
         await sw.WriteLineAsync("| Package | Version | License | Authors |");
         await sw.WriteLineAsync("|---------|---------|---------|---------|");
 
-        foreach (var n in nugets)
+        foreach (var e in entries)
         {
-            var authors = string.Join(", ", n.Authors);
-            var license = n.LicenseUrl is Uri url
-                ? $"[{Escape(n.License)}]({url})"
-                : Escape(n.License);
+            var name = e.ProjectUrl is string pu
+                ? $"[{Escape(e.Id)}]({pu})"
+                : Escape(e.Id);
+            var authors = string.Join(", ", e.Authors);
+            var license = e.LicenseUrl is string url
+                ? $"[{Escape(e.License)}]({url})"
+                : Escape(e.License);
 
-            await sw.WriteLineAsync($"| {Escape(n.Id)} | {n.Version} | {license} | {Escape(authors)} |");
+            await sw.WriteLineAsync($"| {name} | {e.Version} | {license} | {Escape(authors)} |");
         }
 
         await sw.WriteLineAsync();
     }
 
-    static async Task WriteSections(StreamWriter sw, NugetMetadata[] nugets, DirectoryInfo license_root)
+    static async Task WriteSections(StreamWriter sw, LicenseEntry[] entries, DirectoryInfo license_root)
     {
         // Group by license expression; NOASSERTION goes last
-        var groups = nugets
-            .GroupBy(n => n.License)
+        var groups = entries
+            .GroupBy(e => e.License)
             .OrderBy(g => g.Key == NulicLicense.NOASSERTION ? 1 : 0)
             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
 
@@ -49,13 +65,21 @@ internal static class MarkdownReport
             await sw.WriteLineAsync($"## {group.Key}");
             await sw.WriteLineAsync();
 
-            var packageList = string.Join(", ", group.Select(n => $"{n.Id} {n.Version}"));
+            var packageList = string.Join(", ", group.Select(e => $"{e.Id} {e.Version}"));
             await sw.WriteLineAsync($"**Packages:** {packageList}");
             await sw.WriteLineAsync();
 
+            var copyrights = group.Select(e => e.Copyright).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().ToArray();
+            if (copyrights.Length > 0)
+            {
+                foreach (var c in copyrights)
+                    await sw.WriteLineAsync($"> {Escape(c!)}");
+                await sw.WriteLineAsync();
+            }
+
             // Collect unique license files across all packages in this group
             var allFiles = group
-                .SelectMany(n => n.LicenseFiles)
+                .SelectMany(e => e.LicenseFiles)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(f => f);
 
