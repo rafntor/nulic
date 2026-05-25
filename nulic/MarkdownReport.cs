@@ -71,11 +71,7 @@ internal static class MarkdownReport
             if (copyrights.Length > 0)
             {
                 for (int i = 0; i < copyrights.Length; i++)
-                {
                     await sw.WriteLineAsync($"> {Escape(copyrights[i]!)}");
-                    if (i < copyrights.Length - 1)
-                        await sw.WriteLineAsync(">");
-                }
                 await sw.WriteLineAsync();
             }
 
@@ -88,7 +84,7 @@ internal static class MarkdownReport
             bool hasFiles = false;
             foreach (var file in allFiles)
             {
-                var link = file.Replace('\\', '/');
+                var link = file.Replace('\\', '/').Replace(" ", "%20");
                 await sw.WriteAsync($"[{Path.GetFileName(file)}]({link})");
                 await sw.WriteAsync("  ");
                 hasFiles = true;

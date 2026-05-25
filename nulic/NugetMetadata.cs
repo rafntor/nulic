@@ -172,13 +172,15 @@ internal class NugetMetadata
         // 'licenses' contain the relative filepaths from root of the nuget
         IEnumerable<NulicLicense> licenses = Enumerable.Empty<NulicLicense>();
 
-        // Override: explicit licenseUrl takes precedence over everything
-        if (_override?.LicenseUrl != null)
-            return await FetchOverrideLicense(license_root);
-
-        // Override: known SPDX expression without a URL — download canonical text(s)
-        if (_override?.License != null)
-            return await DownloadOverrideExpression(_override.License, license_root);
+        // Override: explicit licenseUrl or SPDX expression — fetch override, then also copy any embedded package files
+        if (_override?.LicenseUrl != null || _override?.License != null)
+        {
+            var overrideLicenses = _override.LicenseUrl != null
+                ? await FetchOverrideLicense(license_root)
+                : await DownloadOverrideExpression(_override.License!, license_root);
+            var embedded = await CopyEmbeddedFiles(license_root, ["*license*", "*thirdpartynotice*.*", "*notice*.*", "*credit*.*"]);
+            return overrideLicenses.Concat(embedded);
+        }
 
         var license_data = _manifest.LicenseMetadata;
 
@@ -188,7 +190,11 @@ internal class NugetMetadata
             // (more authentic, may include project-specific wording) over the canonical spdx.org text.
             var embedded = await CopyEmbeddedFiles(license_root, ["*license*"], warnIfMissing: true);
 
-            licenses = embedded.Any()
+            // LicenseRef-* are user-defined — no public SPDX text exists; don't attempt download.
+            // Leave licenses as the embedded result (possibly empty) so the fallback scan can run.
+            bool isLicenseRef = license_data.License.Contains("LicenseRef-", StringComparison.OrdinalIgnoreCase);
+
+            licenses = embedded.Any() || isLicenseRef
                 ? embedded
                 : await DownloadLicenses(license_data.LicenseExpression!, license_root);
 
@@ -267,7 +273,7 @@ internal class NugetMetadata
     {
         var file = new FileInfo(filepath);
 
-        return FileSystemName.MatchesSimpleExpression(pattern, file.Name);
+        return FileSystemName.MatchesSimpleExpression(pattern, file.Name, ignoreCase: true);
     }
     async Task<IEnumerable<NulicLicense>> CopyEmbeddedFiles(DirectoryInfo destination, string[] candidates, bool warnIfMissing = false)
     {
