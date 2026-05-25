@@ -70,8 +70,12 @@ internal static class MarkdownReport
             var copyrights = group.Select(e => e.Copyright).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().ToArray();
             if (copyrights.Length > 0)
             {
-                foreach (var c in copyrights)
-                    await sw.WriteLineAsync($"> {Escape(c!)}");
+                for (int i = 0; i < copyrights.Length; i++)
+                {
+                    await sw.WriteLineAsync($"> {Escape(copyrights[i]!)}");
+                    if (i < copyrights.Length - 1)
+                        await sw.WriteLineAsync(">");
+                }
                 await sw.WriteLineAsync();
             }
 
