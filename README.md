@@ -3,6 +3,9 @@
 A .NET global tool that collects and produces a **license disclosure package** for all NuGet dependencies in a project.
 
 [![CI](https://github.com/rafntor/nulic/actions/workflows/ci.yml/badge.svg)](https://github.com/rafntor/nulic/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/nulic.svg)](https://www.nuget.org/packages/nulic)
+
+> 📋 See a live example of the report: open the [latest CI run](https://github.com/rafntor/nulic/actions/workflows/ci.yml) and click the **Summary** tab.
 
 ## What it does
 
