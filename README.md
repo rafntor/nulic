@@ -33,6 +33,7 @@ nulic [<path>] [options]
 | `<path>` | Solution file, project file, or folder. Default: `.` |
 | `-d`, `--show-defaults` | Print the default `nulic.json` to stdout and exit |
 | `-l`, `--log-level` | Log verbosity: `Verbose`, `Debug`, `Information` (default), `Warning`, `Error` |
+| `-m`, `--merge <dir>` | Merge a `licenses/` directory from another nulic-processed project (repeatable) |
 
 ### Examples
 
@@ -45,6 +46,9 @@ nulic path/to/MyApp.sln
 
 # Only show warnings and errors
 nulic --log-level Warning
+
+# Combine licenses from two sub-projects into one disclosure package
+nulic MyApp.sln --merge ../firmware/licenses --merge ../safety/licenses
 ```
 
 ## nulic.json
@@ -135,7 +139,25 @@ If nulic cannot obtain or identify a license for a package, the `license` field 
 ]
 ```
 
+## Merging projects (`--merge`)
 
+When a product bundles multiple independently-built components (e.g. a main application together with subsystems from different repos), each component should first be processed by nulic on its own. Then use `--merge` to produce a combined disclosure package:
+
+```sh
+# Step 1: process each component independently (in their own CI)
+nulic HAL9000/           # produces HAL9000/licenses/
+nulic AE35Unit/          # produces AE35Unit/licenses/
+
+# Step 2: produce the combined disclosure for the product
+nulic Discovery/ --merge ../HAL9000/licenses --merge ../AE35Unit/licenses
+```
+
+The merge step:
+- Reads `licenses.json` from each merged directory
+- Copies license files into the target `licenses/` folder (skips identical files, **errors on content mismatch**)
+- Unions all packages, deduplicating by `Id + Version`
+- Validates the combined set against the target project's `allow` list
+- Regenerates `licenses.md` from the combined data
 
 Running `nulic` on the nulic repo itself produces (abbreviated):
 

@@ -45,6 +45,9 @@ Program.cs               CLI entry-point (System.CommandLine)
             └─ LicenseDownload   URL-based license fetching (handles transforms)
             └─ SpdxLookup        Downloads canonical SPDX license texts from spdx.org
             └─ CommonLicenses    Bundled text for the most common SPDX licenses
+LicenseEntry             DTO record — mirrors licenses.json schema; used by MarkdownReport and LicenseMerge
+LicenseMerge             --merge implementation: copies files, unions packages, validates combined set
+MarkdownReport           Reads licenses.json → writes licenses.md (no NugetMetadata dependency)
 ProgramSettings          Loads/creates nulic.json; PackageOverride; NulicSettings
 ```
 
@@ -115,6 +118,13 @@ first caller runs `InitializeOnce`, others await the semaphore.
 - **Composite SPDX expressions**: Multi-license bundles are represented as `A AND B AND C`.
   GPL exceptions are represented as `GPL-2.0-only WITH LicenseRef-linking-exception`. The `AND`
   combinator is used (worst-case/most restrictive) when the relationship is unclear.
+- **`LicenseRef-*` are label-only**: User-defined identifiers (e.g. `LicenseRef-Softing-U-V2.02`)
+  are never downloadable from spdx.org — `SpdxLookup` returns `NotFound` immediately, so no
+  phantom file entries appear in `licenses.json`.
+- **`--merge` semantics**: Each sub-project runs nulic independently (its own CI gate). The merge
+  step combines `licenses.json` entries from all sources, copies missing license files, and
+  validates the combined set against the *target* project's allow list. Content-identical files are
+  silently skipped; a content mismatch is a fatal error.
 
 ## JSON output schema (`licenses.json`)
 
@@ -136,12 +146,13 @@ first caller runs `InitializeOnce`, others await the semaphore.
 ## CLI
 
 ```
-nulic [<path>] [--log-level <level>] [--show-defaults]
+nulic [<path>] [--log-level <level>] [--show-defaults] [--merge <dir>]
 ```
 
 - `<path>`: solution file, project file, or folder (default: `.`)
 - `--log-level` / `-l`: minimum Serilog log level (Verbose/Debug/Information/Warning/Error/Fatal). Default: Information.
 - `--show-defaults` / `-d`: print the default `nulic.json` to stdout and exit (useful as a starting template)
+- `--merge` / `-m`: path to a `licenses/` directory from another nulic-processed project to merge in. Repeatable.
 
 Output is always written to `<solutiondir>/licenses/`.
 
@@ -206,3 +217,4 @@ the default JSON (used by `--show-defaults`).
 - `--error-only` flag to suppress valid packages from console output
 - `NETStandard.Library` has a dead license URL — candidate for a built-in override
 - Allowlist exit-code semantics: currently exits 1 if any package is not in the allowlist; may want a `--warn-only` mode
+- `MarkdownReport` and `LicenseMerge` share the same JSON read options — candidate for a shared helper
