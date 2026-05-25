@@ -132,7 +132,7 @@ internal static class MarkdownReport
     static bool HasLicenseRef(string license) =>
         license.Contains("LicenseRef-", StringComparison.OrdinalIgnoreCase);
 
-    // Format the license column: link each SPDX component to its local file in licenses/.
+    // Format the license column: link each SPDX component to its local file in third-party-notices/.
     // Falls back to plain text if no matching file is found — never links to external URLs.
     static string FormatLicense(string license, string[] licenseFiles, DirectoryInfo license_root)
     {
@@ -166,7 +166,7 @@ internal static class MarkdownReport
             string.Equals(Path.GetFileNameWithoutExtension(f), spdxId, StringComparison.OrdinalIgnoreCase));
         if (byName != null) return byName.Replace('\\', '/');
 
-        // 2. Shared file at license root: e.g. licenses/MIT.txt
+        // 2. Shared file at license root: e.g. third-party-notices/MIT.txt
         var shared = $"{spdxId}.txt";
         if (File.Exists(Path.Join(license_root.FullName, shared)))
             return shared;

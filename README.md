@@ -33,7 +33,7 @@ nulic [<path>] [options]
 | `<path>` | Solution file, project file, or folder. Default: `.` |
 | `-d`, `--show-defaults` | Print the default `nulic.json` to stdout and exit |
 | `-l`, `--log-level` | Log verbosity: `Verbose`, `Debug`, `Information` (default), `Warning`, `Error` |
-| `-m`, `--merge <dir>` | Merge a `licenses/` directory from another nulic-processed project (repeatable) |
+| `-m`, `--merge <dir>` | Merge a `third-party-notices/` directory from another nulic-processed project (repeatable) |
 | `-o`, `--output <dir>` | Output folder for license files and report. Default: `<path>/third-party-notices` |
 
 ### Examples
@@ -49,10 +49,10 @@ nulic path/to/MyApp.sln
 nulic --log-level Warning
 
 # Combine licenses from two sub-projects into one disclosure package
-nulic MyApp.sln --merge ../firmware/licenses --merge ../safety/licenses
+nulic MyApp.sln --merge ../firmware/third-party-notices --merge ../safety/third-party-notices
 
 # Write output to a custom folder
-nulic MyApp.sln --output D:/artifacts/licenses
+nulic MyApp.sln --output D:/artifacts/third-party-notices
 ```
 
 ## nulic.json
@@ -197,5 +197,5 @@ third-party-notices/
 | SDK-style `.csproj` / `.fsproj` / `.vbproj` | `obj/project.assets.json` (requires `dotnet restore`) |
 | Classic .NET Framework `.csproj` | `packages.config` |
 | Native C++ `.vcxproj` | `packages.config` |
-| Solutions `.sln` | All constituent projects |
-| Folder | Auto-discovers first `.sln`, then `.csproj`, etc. |
+| Solutions `.sln` / `.slnx` | All constituent projects |
+| Folder | Auto-discovers first `.sln` / `.slnx`, then `.csproj`, etc. |

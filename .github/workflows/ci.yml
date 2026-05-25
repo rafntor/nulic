@@ -37,7 +37,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: licenses
-          path: nulic/licenses/
+          path: nulic/third-party-notices/
 
       - name: Pack
         if: startsWith(github.ref, 'refs/tags/v')

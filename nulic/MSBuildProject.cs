@@ -1,4 +1,5 @@
-﻿using Microsoft.Build.Construction;
+﻿using System.Xml.Linq;
+using Microsoft.Build.Construction;
 using Serilog;
 
 namespace nulic;
@@ -51,7 +52,7 @@ internal class MSBuildProject
     }
     static void LoadFrom(DirectoryInfo dir, IList<MSBuildProject> list)
     {
-        string[] extensions = { "*.sln", "*.csproj", "*.vbproj", "*.fsproj", "*.vcxproj" };
+        string[] extensions = { "*.sln", "*.slnx", "*.csproj", "*.vbproj", "*.fsproj", "*.vcxproj" };
 
         foreach (var ext in extensions)
         {
@@ -73,6 +74,17 @@ internal class MSBuildProject
             foreach (var project in sln.ProjectsInOrder)
                 if (project.ProjectType == SolutionProjectType.KnownToBeMSBuildFormat)
                     LoadFrom(new FileInfo(project.AbsolutePath), list);
+        }
+        else if (string.Compare(file.Extension, ".slnx", true) == 0)
+        {
+            // .slnx is XML: <Solution><Project Path="..." /><Folder><Project Path="..." /></Folder></Solution>
+            var xml = XDocument.Load(file.FullName);
+            foreach (var proj in xml.Descendants("Project"))
+            {
+                var relPath = proj.Attribute("Path")?.Value;
+                if (relPath != null)
+                    LoadFrom(new FileInfo(Path.Join(file.DirectoryName, relPath)), list);
+            }
         }
         else if (!list.Any(p => p._msbuild_project.FullPath == file.FullName))
         {

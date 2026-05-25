@@ -65,10 +65,10 @@ Source priority per project:
 Priority order:
 1. **SPDX expression** (`<license type="expression">MIT</license>`):
    Download the canonical text for each leaf identifier from spdx.org (via `SpdxLookup`).
-   Standard licenses land directly in `third-party-notices/` (shared). E.g. `licenses/MIT.txt`.
+   Standard licenses land directly in `third-party-notices/` (shared). E.g. `third-party-notices/MIT.txt`.
 
 2. **Embedded file** (`<license type="file">LICENSE</license>`):
-   Copy from the global NuGet packages cache into `licenses/<Id>.<Version>/LICENSE`.
+   Copy from the global NuGet packages cache into `third-party-notices/<Id>.<Version>/LICENSE`.
 
 3. **Legacy URL** (`<licenseUrl>https://...`):
    Download from the URL. GitHub blob URLs are rewritten to raw content.
@@ -112,7 +112,7 @@ first caller runs `InitializeOnce`, others await the semaphore.
   has a corresponding file on disk. NOASSERTION means the file couldn't be obtained.
 - **Shared license files**: Standard licenses (MIT, Apache-2.0, etc.) are stored once at the root
   of `third-party-notices/`, not duplicated per package. Package-specific or unusual licenses go in
-  `licenses/<Id>.<Version>/`.
+  `third-party-notices/<Id>.<Version>/`.
 - **NOASSERTION** is the SPDX-standard sentinel for "could not determine". It is used both for
   the `License` field in JSON and to identify problem packages in console output.
 - **Composite SPDX expressions**: Multi-license bundles are represented as `A AND B AND C`.
@@ -138,7 +138,7 @@ first caller runs `InitializeOnce`, others await the semaphore.
     "Copyright": "Copyright © 2007 James Newton-King",
     "License": "MIT",                            // SPDX expression or NOASSERTION
     "LicenseUrl": "https://licenses.nuget.org/MIT",
-    "LicenseFiles": ["MIT.txt"]                  // relative paths within licenses/
+    "LicenseFiles": ["MIT.txt"]                  // relative paths within third-party-notices/
   }
 ]
 ```
@@ -154,7 +154,7 @@ nulic [<path>] [--log-level <level>] [--show-defaults] [--merge <dir>]
 - `--show-defaults` / `-d`: print the default `nulic.json` to stdout and exit (useful as a starting template)
 - `--merge` / `-m`: path to a `third-party-notices/` directory from another nulic-processed project to merge in. Repeatable.
 
-Output is always written to `<solutiondir>/licenses/`.
+Output is always written to `<solutiondir>/third-party-notices/`.
 
 ## nulic.json — settings file
 

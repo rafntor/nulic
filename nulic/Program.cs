@@ -54,7 +54,7 @@ internal class Program
 
         var merge = new Option<string[]>("--merge")
         {
-            Description = "Path to a licenses/ directory from another nulic-processed project to merge into the report. Can be specified multiple times.",
+            Description = "Path to a third-party-notices/ directory from another nulic-processed project to merge into the report. Can be specified multiple times.",
             Arity = ArgumentArity.ZeroOrMore,
             AllowMultipleArgumentsPerToken = false,
         };
