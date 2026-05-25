@@ -4,12 +4,7 @@ namespace nulic;
 
 internal static class MarkdownReport
 {
-    static readonly JsonSerializerOptions _readOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
+    static readonly JsonSerializerOptions _readOptions = JsonOptions.Read;
 
     public static async Task Write(DirectoryInfo license_root)
     {

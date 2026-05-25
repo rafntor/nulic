@@ -51,6 +51,9 @@ internal static class PackageFilter
         .Select(p => p.StartsWith("id:", StringComparison.OrdinalIgnoreCase) ? p["id:".Length..] : p)
         .ToArray();
 
+    internal static bool IsIgnoredId(string id, string[] idPats) =>
+        idPats.Any(p => FileSystemName.MatchesSimpleExpression(p, id, ignoreCase: true));
+
     internal static int ApplyAllow(LicenseEntry[] entries, string[] allowed)
     {
         var allowedIds = new HashSet<string>(

@@ -31,6 +31,10 @@ internal class NulicLicense
     static readonly Cosine _strcmp = new();
     static NulicLicense()
     {
+        SeedCommonLicenses();
+    }
+    static void SeedCommonLicenses()
+    {
         foreach (var license in CommonLicenses.Licenses)
         {
             var nl = new NulicLicense(_null_file)
@@ -171,15 +175,7 @@ internal class NulicLicense
             _byPath.Clear();
             _bySpdxId.Clear();
             _byContentHash.Clear();
-            foreach (var license in CommonLicenses.Licenses)
-            {
-                var nl = new NulicLicense(_null_file)
-                {
-                    _spdx_id = license.Key,
-                    _profile = _strcmp.GetProfile(license.Value),
-                };
-                _bySpdxId[license.Key] = nl;
-            }
+            SeedCommonLicenses();
         }
     }
 }

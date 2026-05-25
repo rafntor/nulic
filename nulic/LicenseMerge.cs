@@ -5,18 +5,7 @@ namespace nulic;
 
 internal static class LicenseMerge
 {
-    static readonly JsonSerializerOptions _readOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true,
-    };
-
-    static readonly JsonSerializerOptions _writeOptions = new()
-    {
-        WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
+    static readonly JsonSerializerOptions _readOptions = JsonOptions.Read;
 
     public static async Task<(LicenseEntry[]? Entries, bool Ok)> Apply(DirectoryInfo license_root, string[] merge_paths)
     {
@@ -89,7 +78,7 @@ internal static class LicenseMerge
             }
         }
 
-        await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(entries, _writeOptions));
+        await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(entries, JsonOptions.Write));
 
         return (entries.ToArray(), ok);
     }

@@ -14,10 +14,8 @@ internal class Program
 {
     public static readonly HttpClient HttpClient = new();
 
-    static readonly JsonSerializerOptions _jsonOptions = new()
+    static readonly JsonSerializerOptions _jsonOptions = new(JsonOptions.Write)
     {
-        WriteIndented = true,
-        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         Converters = { new NuGetVersionConverter(), new UriConverter() }
     };
     static async Task Main(string[] args)
@@ -120,8 +118,7 @@ internal class Program
         // Apply overrides from nulic.json: patch matching packages, inject new entries
         // Overrides whose id is in the ignore list are skipped (natural extension of ignore semantics)
         var idPats = PackageFilter.IdPatterns(patternIgnore);
-        bool IsIgnored(string id) => ignoredIds.Contains(id) ||
-            idPats.Any(p => System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(p, id, ignoreCase: true));
+        bool IsIgnored(string id) => ignoredIds.Contains(id) || PackageFilter.IsIgnoredId(id, idPats);
 
         var overrides = settings.Overrides.Where(o => !IsIgnored(o.Id));
         var injected = new List<NugetMetadata>();
