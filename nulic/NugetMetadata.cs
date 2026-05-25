@@ -64,12 +64,16 @@ internal class NugetMetadata
             if (License == NulicLicense.NOASSERTION)
                 return null;
 
-            // licenses.nuget.org only resolves single SPDX identifiers, not compound expressions
-            if (License.Contains(' '))
+            // LicenseRef-* are user-defined identifiers — no public page exists
+            if (License.Contains("LicenseRef-", StringComparison.OrdinalIgnoreCase))
                 return null;
 
-            return new Uri(string.Format(CultureInfo.InvariantCulture, 
-                LicenseMetadata.LicenseServiceLinkTemplate, License));
+            // AND/OR compound expressions have no single canonical URL
+            if (License.Contains(" AND ") || License.Contains(" OR "))
+                return null;
+
+            // Single ID or WITH expression — licenses.nuget.org handles both
+            return new Uri($"https://licenses.nuget.org/{Uri.EscapeDataString(License)}");
         } 
     }
     public IEnumerable<string> LicenseFiles { get; private set; } = Enumerable.Empty<string>();

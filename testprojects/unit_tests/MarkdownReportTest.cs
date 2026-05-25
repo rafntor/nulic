@@ -63,12 +63,58 @@ public class MarkdownReportTest
     }
 
     [TestMethod]
-    public async Task Table_row_with_license_url_becomes_link()
+    public async Task Table_row_with_license_url_ignored_in_table()
     {
+        // LicenseUrl is stored in JSON for tooling, but table links only to local files
         var md = await RunAndRead([
             new("Foo.Bar", "1.0.0", ["Alice"], null, null, "MIT", "https://spdx.org/licenses/MIT", [])
         ]);
-        StringAssert.Contains(md, "[MIT](https://spdx.org/licenses/MIT)");
+        // No local file → plain text, no link
+        Assert.IsFalse(md.Contains("[MIT]("), "no local file means no link, even if LicenseUrl present");
+        StringAssert.Contains(md, "MIT");
+    }
+
+    [TestMethod]
+    public async Task Table_embedded_file_used_as_link()
+    {
+        var md = await RunAndRead([
+            new("Foo.Bar", "1.0.0", ["Alice"], null, null, "MIT",
+                "https://licenses.nuget.org/MIT", ["MIT.txt"])
+        ]);
+        StringAssert.Contains(md, "[MIT](MIT.txt)");
+    }
+
+    [TestMethod]
+    public async Task Table_shared_root_file_linked_when_package_has_no_own_file()
+    {
+        // Package declares MIT via expression — LicenseFiles is empty.
+        // But MIT.txt was downloaded to the shared licenses root for another package.
+        var tmp = Directory.CreateTempSubdirectory("nulic_md_");
+        try
+        {
+            var dir = WriteLicensesJson(tmp.FullName, [
+                new("Foo.Bar", "1.0.0", [], null, null, "MIT", null, [])
+            ]);
+            // Shared file already present (downloaded for some other MIT package)
+            File.WriteAllText(Path.Join(tmp.FullName, "MIT.txt"), "MIT license text");
+
+            await nulic.MarkdownReport.Write(dir);
+            var md = await File.ReadAllTextAsync(Path.Join(tmp.FullName, "licenses.md"));
+
+            StringAssert.Contains(md, "[MIT](MIT.txt)",
+                "shared MIT.txt at root should be used even when LicenseFiles is empty");
+        }
+        finally { tmp.Delete(recursive: true); }
+    }
+
+    [TestMethod]
+    public async Task Table_single_unnamed_file_used_as_fallback()
+    {
+        // Package has "LICENSE" (no SPDX name) — single file fallback applies
+        var md = await RunAndRead([
+            new("Pkg.A", "1.0.0", [], null, null, "MIT", null, [@"Pkg.A\1.0\LICENSE"])
+        ]);
+        StringAssert.Contains(md, "[MIT](Pkg.A/1.0/LICENSE)");
     }
 
     [TestMethod]
@@ -242,5 +288,64 @@ public class MarkdownReportTest
             StringAssert.Contains(md, "(Pkg.A.1.0/LICENSE)");
         }
         finally { tmp.Delete(recursive: true); }
+    }
+
+    // ── License link rules ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task Table_LicenseRef_is_not_clickable_even_with_url()
+    {
+        var md = await RunAndRead([
+            new("Acme.Sdk", "1.0.0", [], null, null,
+                "LicenseRef-Proprietary", "https://acme.com/license", [])
+        ]);
+        Assert.IsFalse(md.Contains("[LicenseRef-Proprietary]("), "LicenseRef-* must not be a hyperlink");
+        StringAssert.Contains(md, "LicenseRef-Proprietary");
+    }
+
+    [TestMethod]
+    public async Task Table_WITH_expression_links_to_local_file()
+    {
+        var md = await RunAndRead([
+            new("SomeLib", "1.0.0", [], null, null,
+                "GPL-2.0-only WITH Classpath-exception-2.0",
+                "https://licenses.nuget.org/GPL-2.0-only%20WITH%20Classpath-exception-2.0",
+                ["GPL-2.0-only WITH Classpath-exception-2.0.txt"])
+        ]);
+        StringAssert.Contains(md, "[GPL-2.0-only WITH Classpath-exception-2.0](GPL-2.0-only WITH Classpath-exception-2.0.txt)");
+    }
+
+    [TestMethod]
+    public async Task Table_WITH_expression_plain_text_when_no_local_file()
+    {
+        var md = await RunAndRead([
+            new("SomeLib", "1.0.0", [], null, null,
+                "GPL-2.0-only WITH Classpath-exception-2.0", null, [])
+        ]);
+        Assert.IsFalse(md.Contains("[GPL-2.0-only WITH Classpath-exception-2.0]("),
+            "WITH expression without local file must be plain text");
+    }
+
+    [TestMethod]
+    public async Task Table_AND_compound_each_component_links_to_its_file()
+    {
+        var md = await RunAndRead([
+            new("metis.net", "3.0.0", [], null, null,
+                "Apache-2.0 AND BSD-3-Clause", null,
+                ["Apache-2.0.txt", "BSD-3-Clause.txt"])
+        ]);
+        StringAssert.Contains(md, "[Apache-2.0](Apache-2.0.txt)");
+        StringAssert.Contains(md, "[BSD-3-Clause](BSD-3-Clause.txt)");
+        StringAssert.Contains(md, " AND ");
+    }
+
+    [TestMethod]
+    public async Task Table_AND_compound_plain_text_when_no_files()
+    {
+        var md = await RunAndRead([
+            new("Bundle", "1.0.0", [], null, null, "MIT AND Apache-2.0", null, [])
+        ]);
+        Assert.IsFalse(md.Contains("[MIT AND Apache-2.0]("), "compound without files must be plain text");
+        StringAssert.Contains(md, "MIT AND Apache-2.0");
     }
 }

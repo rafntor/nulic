@@ -22,11 +22,11 @@ internal static class MarkdownReport
 
         await using var sw = new StreamWriter(outfile, append: false, System.Text.Encoding.UTF8);
 
-        await WriteTable(sw, sorted);
+        await WriteTable(sw, sorted, license_root);
         await WriteSections(sw, sorted, license_root);
     }
 
-    static async Task WriteTable(StreamWriter sw, LicenseEntry[] entries)
+    static async Task WriteTable(StreamWriter sw, LicenseEntry[] entries, DirectoryInfo license_root)
     {
         await sw.WriteLineAsync("# Third-Party License Notices");
         await sw.WriteLineAsync();
@@ -39,9 +39,7 @@ internal static class MarkdownReport
                 ? $"[{Escape(e.Id)}]({pu})"
                 : Escape(e.Id);
             var authors = string.Join(", ", e.Authors);
-            var license = e.LicenseUrl is string url
-                ? $"[{Escape(e.License)}]({url})"
-                : Escape(e.License);
+            var license = FormatLicense(e.License, e.LicenseFiles, license_root);
 
             await sw.WriteLineAsync($"| {name} | {e.Version} | {license} | {Escape(authors)} |");
         }
@@ -104,4 +102,53 @@ internal static class MarkdownReport
 
     static string Escape(string text) =>
         text.Replace("|", "\\|").Replace("\r", "").Replace("\n", " ");
+
+    static bool HasLicenseRef(string license) =>
+        license.Contains("LicenseRef-", StringComparison.OrdinalIgnoreCase);
+
+    // Format the license column: link each SPDX component to its local file in licenses/.
+    // Falls back to plain text if no matching file is found — never links to external URLs.
+    static string FormatLicense(string license, string[] licenseFiles, DirectoryInfo license_root)
+    {
+        if (HasLicenseRef(license)) return Escape(license);
+
+        if (license.Contains(" AND ") || license.Contains(" OR "))
+            return FormatCompound(license, licenseFiles, license_root);
+
+        var url = FindFileUrl(license, licenseFiles, license_root, singleFileFallback: true);
+        return url != null ? $"[{Escape(license)}]({url})" : Escape(license);
+    }
+
+    static string FormatCompound(string license, string[] licenseFiles, DirectoryInfo license_root)
+    {
+        var sb = new System.Text.StringBuilder();
+        var parts = System.Text.RegularExpressions.Regex.Split(license, @"( AND | OR )");
+        foreach (var part in parts)
+        {
+            if (part is " AND " or " OR ") { sb.Append(part); continue; }
+            if (HasLicenseRef(part)) { sb.Append(Escape(part)); continue; }
+            var url = FindFileUrl(part, licenseFiles, license_root, singleFileFallback: false);
+            sb.Append(url != null ? $"[{Escape(part)}]({url})" : Escape(part));
+        }
+        return sb.ToString();
+    }
+
+    static string? FindFileUrl(string spdxId, string[] licenseFiles, DirectoryInfo license_root, bool singleFileFallback)
+    {
+        // 1. Package-specific file whose basename matches the SPDX ID
+        var byName = licenseFiles.FirstOrDefault(f =>
+            string.Equals(Path.GetFileNameWithoutExtension(f), spdxId, StringComparison.OrdinalIgnoreCase));
+        if (byName != null) return byName.Replace('\\', '/');
+
+        // 2. Shared file at license root: e.g. licenses/MIT.txt
+        var shared = $"{spdxId}.txt";
+        if (File.Exists(Path.Join(license_root.FullName, shared)))
+            return shared;
+
+        // 3. Single-file fallback for packages with one non-canonically-named file
+        if (singleFileFallback && licenseFiles.Length == 1)
+            return licenseFiles[0].Replace('\\', '/');
+
+        return null;
+    }
 }
