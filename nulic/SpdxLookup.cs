@@ -6,6 +6,10 @@ internal class SpdxLookup
 {
     public static Task<NulicLicense> DownloadLicense(string spdx_id, DirectoryInfo destination)
     {
+        // LicenseRef-* are user-defined identifiers — no canonical text exists on spdx.org
+        if (spdx_id.StartsWith("LicenseRef-", StringComparison.OrdinalIgnoreCase))
+            return Task.FromResult(NulicLicense.NotFound);
+
         var file = new FileInfo(Path.Join(destination.FullName, $"{spdx_id}.txt"));
 
         var text_getter = () => FindOrDownloadLicense(spdx_id);

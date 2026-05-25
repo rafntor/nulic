@@ -54,11 +54,20 @@ internal class Program
         };
         showDefaults.Aliases.Add("-d");
 
+        var merge = new Option<string[]>("--merge")
+        {
+            Description = "Path to a licenses/ directory from another nulic-processed project to merge into the report. Can be specified multiple times.",
+            Arity = ArgumentArity.ZeroOrMore,
+            AllowMultipleArgumentsPerToken = false,
+        };
+        merge.Aliases.Add("-m");
+
         var rootCommand = new RootCommand("Nuget license collection and reporting tool.");
 
         rootCommand.Arguments.Add(path);
         rootCommand.Options.Add(logLevel);
         rootCommand.Options.Add(showDefaults);
+        rootCommand.Options.Add(merge);
 
         rootCommand.SetAction(async (parseResult, _) =>
         {
@@ -67,12 +76,12 @@ internal class Program
                 Console.WriteLine(ProgramSettings.SerializeDefault());
                 return 0;
             }
-            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel));
+            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(merge) ?? []);
         });
 
         return rootCommand;
     }
-    static async Task<int> Process(string path, LogEventLevel? logLevel = null)
+    static async Task<int> Process(string path, LogEventLevel? logLevel = null, string[]? merges = null)
     {
         var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
         ProgramSettings.Load(solutionDir);
@@ -146,6 +155,10 @@ internal class Program
         var outfile = Path.Join(license_root.FullName, "licenses.json");
 
         await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
+
+        if (merges is { Length: > 0 } && !await LicenseMerge.Apply(license_root, merges))
+            return -1;
+
         await MarkdownReport.Write(license_root);
 
         var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION).ToArray();
