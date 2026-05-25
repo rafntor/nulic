@@ -28,16 +28,16 @@ jobs:
         run: dotnet test testprojects/unit_tests --nologo -c Release
 
       - name: Dog-food (run nulic on itself)
-        run: dotnet nulic/bin/Release/net10.0/nulic.dll .
+        run: dotnet nulic/bin/Release/net10.0/nulic.dll nulic/
 
       - name: Publish license report to job summary
-        run: cat licenses/licenses.md >> $GITHUB_STEP_SUMMARY
+        run: cat nulic/licenses/licenses.md >> $GITHUB_STEP_SUMMARY
 
       - name: Upload licenses as artifact
         uses: actions/upload-artifact@v4
         with:
           name: licenses
-          path: licenses/
+          path: nulic/licenses/
 
       - name: Pack
         if: startsWith(github.ref, 'refs/tags/v')
