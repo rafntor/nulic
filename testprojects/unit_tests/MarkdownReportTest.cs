@@ -162,11 +162,30 @@ public class MarkdownReportTest
             new("C", "1.0", [], null, null, "MIT",        null, []),
         ]);
         // MIT section should list both A and C
-        var mitIdx = md.IndexOf("## MIT");
+        var mitIdx = md.IndexOf("## MIT (");
         Assert.IsTrue(mitIdx >= 0, "MIT section missing");
         var mitSection = md[mitIdx..];
         StringAssert.Contains(mitSection[..mitSection.IndexOf("---")], "A 1.0");
         StringAssert.Contains(mitSection[..mitSection.IndexOf("---")], "C 1.0");
+    }
+
+    [TestMethod]
+    public async Task Sections_heading_includes_package_count()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT", null, []),
+            new("B", "1.0", [], null, null, "MIT", null, []),
+        ]);
+        StringAssert.Contains(md, "## MIT (2 packages)");
+    }
+
+    [TestMethod]
+    public async Task Sections_heading_singular_for_one_package()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "## MIT (1 package)");
     }
 
     [TestMethod]
@@ -176,8 +195,8 @@ public class MarkdownReportTest
             new("A", "1.0", [], null, null, nulic.NulicLicense.NOASSERTION, null, []),
             new("B", "1.0", [], null, null, "MIT",                          null, []),
         ]);
-        var mitIdx          = md.IndexOf("## MIT",         StringComparison.Ordinal);
-        var noAssertionIdx  = md.IndexOf($"## {nulic.NulicLicense.NOASSERTION}", StringComparison.Ordinal);
+        var mitIdx          = md.IndexOf("## MIT (",         StringComparison.Ordinal);
+        var noAssertionIdx  = md.IndexOf($"## {nulic.NulicLicense.NOASSERTION} (", StringComparison.Ordinal);
 
         Assert.IsTrue(mitIdx >= 0,         "MIT section missing");
         Assert.IsTrue(noAssertionIdx >= 0, "NOASSERTION section missing");
@@ -347,5 +366,59 @@ public class MarkdownReportTest
         ]);
         Assert.IsFalse(md.Contains("[MIT AND Apache-2.0]("), "compound without files must be plain text");
         StringAssert.Contains(md, "MIT AND Apache-2.0");
+    }
+
+    // ── Summary / Footer / NOASSERTION highlight ──────────────────────────
+
+    [TestMethod]
+    public async Task Summary_shows_package_and_license_counts()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT",        null, []),
+            new("B", "1.0", [], null, null, "Apache-2.0", null, []),
+            new("C", "1.0", [], null, null, "MIT",        null, []),
+        ]);
+        StringAssert.Contains(md, "3 packages");
+        StringAssert.Contains(md, "2 unique licenses");
+    }
+
+    [TestMethod]
+    public async Task Summary_shows_unresolved_count_when_noassertion_present()
+    {
+        var na = nulic.NulicLicense.NOASSERTION;
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT", null, []),
+            new("B", "1.0", [], null, null, na,    null, []),
+        ]);
+        StringAssert.Contains(md, "⚠️ 1 unresolved");
+    }
+
+    [TestMethod]
+    public async Task Summary_no_unresolved_label_when_all_resolved()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT", null, [])
+        ]);
+        Assert.IsFalse(md.Contains("unresolved"), "should not mention unresolved when none");
+    }
+
+    [TestMethod]
+    public async Task Table_NOASSERTION_row_has_warning_emoji()
+    {
+        var na = nulic.NulicLicense.NOASSERTION;
+        var md = await RunAndRead([
+            new("Bad.Pkg", "1.0", [], null, null, na, null, [])
+        ]);
+        StringAssert.Contains(md, "| ⚠️ Bad.Pkg |");
+    }
+
+    [TestMethod]
+    public async Task Footer_contains_nulic_and_date()
+    {
+        var md = await RunAndRead([
+            new("A", "1.0", [], null, null, "MIT", null, [])
+        ]);
+        StringAssert.Contains(md, "[nulic](https://github.com/rafntor/nulic)");
+        StringAssert.Contains(md, DateTime.Now.Year.ToString());
     }
 }
