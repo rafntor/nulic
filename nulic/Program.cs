@@ -156,38 +156,25 @@ internal class Program
 
         await File.WriteAllTextAsync(outfile, JsonSerializer.Serialize(nugets, _jsonOptions));
 
-        LicenseEntry[] allEntries;
-
-        if (merges is { Length: > 0 })
-        {
-            var (merged, mergeOk) = await LicenseMerge.Apply(license_root, merges);
-            if (!mergeOk) return -1;
-            allEntries = merged!;
-        }
-        else
-        {
-            allEntries = nugets.Select(n => new LicenseEntry(
-                n.Id, n.Version.ToString(), n.Authors.ToArray(),
-                n.ProjectUrl?.ToString(), n.Copyright, n.License,
-                n.LicenseUrl?.ToString(), n.LicenseFiles.ToArray())).ToArray();
-        }
+        if (merges is { Length: > 0 } && !await LicenseMerge.Apply(license_root, merges))
+            return -1;
 
         await MarkdownReport.Write(license_root);
 
-        var problems = allEntries.Where(e => e.License == NulicLicense.NOASSERTION).ToArray();
+        var problems = nugets.Where(n => n.License == NulicLicense.NOASSERTION).ToArray();
 
-        Log.Information("{valid} / {total} packages: license ok", allEntries.Length - problems.Length, allEntries.Length);
+        Log.Information("{valid} / {total} packages: license ok", nugets.Length - problems.Length, nugets.Length);
 
         foreach (var p in problems)
             Log.Warning("NOASSERTION: {id} {version}", p.Id, p.Version);
 
         if (allow.Length > 0)
-            return ApplyAllow(allEntries, allow);
+            return ApplyAllow(nugets, allow);
 
         return 0;
     }
 
-    static int ApplyAllow(LicenseEntry[] entries, string[] allowed)
+    static int ApplyAllow(NugetMetadata[] nugets, string[] allowed)
     {
         var allowedIds = new HashSet<string>(
             allowed.Where(a => !a.StartsWith("WITH ", StringComparison.OrdinalIgnoreCase)),
@@ -196,7 +183,7 @@ internal class Program
             allowed.Where(a => a.StartsWith("WITH ", StringComparison.OrdinalIgnoreCase)),
             StringComparer.OrdinalIgnoreCase);
 
-        var violations = entries.Where(e => !IsAllowed(e.License, allowedIds, allowedExceptions)).ToArray();
+        var violations = nugets.Where(n => !IsAllowed(n.License, allowedIds, allowedExceptions)).ToArray();
 
         if (violations.Length == 0)
             return 0;

@@ -18,7 +18,7 @@ internal static class LicenseMerge
         Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
     };
 
-    public static async Task<(LicenseEntry[]? Entries, bool Ok)> Apply(DirectoryInfo license_root, string[] merge_paths)
+    public static async Task<bool> Apply(DirectoryInfo license_root, string[] merge_paths)
     {
         var jsonPath = Path.Join(license_root.FullName, "licenses.json");
         var entries = JsonSerializer.Deserialize<LicenseEntry[]>(
@@ -91,6 +91,6 @@ internal static class LicenseMerge
 
         await File.WriteAllTextAsync(jsonPath, JsonSerializer.Serialize(entries, _writeOptions));
 
-        return (entries.ToArray(), ok);
+        return ok;
     }
 }
