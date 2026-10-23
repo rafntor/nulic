@@ -349,6 +349,10 @@ internal class NugetMetadata
 
         // Package not in local cache — try NuGet API
         var meta = await TryFetchFromNuGetApi(identity);
+
+        if (meta is null)
+            Log.Warning("{id} {version} : not restored and not found on nuget.org (so license info unknown)", identity.Id, identity.Version);
+
         return meta ?? new NugetMetadata(identity);
     }
 
@@ -372,6 +376,12 @@ internal class NugetMetadata
                 return null;
 
             var stub = new NugetMetadata(identity);
+
+            if (entry.TryGetProperty("authors", out var authorsEl) &&
+                authorsEl.GetString() is { Length: > 0 } authorsStr)
+            {
+                stub._manifest.Authors = authorsStr.Split(',').Select(a => a.Trim());
+            }
 
             if (entry.TryGetProperty("licenseExpression", out var exprEl) &&
                 exprEl.GetString() is { Length: > 0 } expr)
