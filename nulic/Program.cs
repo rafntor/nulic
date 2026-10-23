@@ -81,7 +81,15 @@ internal class Program
                 Console.WriteLine(ProgramSettings.SerializeDefault());
                 return 0;
             }
-            return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(merge) ?? [], parseResult.GetValue(output));
+            try
+            {
+                return await Process(parseResult.GetValue(path)!, parseResult.GetValue(logLevel), parseResult.GetValue(merge) ?? [], parseResult.GetValue(output));
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "nulic failed: {message}", ex.Message);
+                return 1;
+            }
         });
 
         return rootCommand;
