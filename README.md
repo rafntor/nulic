@@ -7,6 +7,23 @@ A .NET global tool that collects and produces a **license disclosure package** f
 
 > 📋 See a live example of the report: open the [latest CI run](https://github.com/rafntor/nulic/actions/workflows/ci.yml) and click the **Summary** tab.
 
+## Why nulic?
+
+- Handles **.NET and native C++ in the same solution** — `.csproj`/`.fsproj`/`.vbproj` *and* `.vcxproj`,
+  via `project.assets.json` or `packages.config` as appropriate. Most alternatives are .NET-only.
+  (Native C++ support is for **NuGet-packaged** dependencies — `vcpkg` manifests are not yet supported.)
+- Understands **`.sln`, `.slnx`, and `.slnf`** (solution filters) as entry points, not just individual projects.
+- Runs **fully offline** against your local NuGet cache, falling back to the public nuget.org API only
+  when needed — no account, API key, or SaaS dependency required.
+- Uses **SPDX fingerprint similarity matching** on embedded/non-standard license text, instead of trusting
+  only the package's self-reported `licenseExpression` string.
+- **Config-driven `nulic.json`** for ignore rules, overrides, and an allowlist CI gate — fix bad/missing
+  package metadata without forking or patching the tool.
+- Produces a **ready-to-ship disclosure artifact** (deduplicated license files + JSON manifest), with
+  `--merge` support for combining multiple independently-built components into one product-level package.
+- Single self-contained `dotnet tool` — one line to install, one line to run in any CI (Azure Pipelines,
+  GitHub Actions, ...).
+
 ## What it does
 
 Given a solution, project, or folder, nulic:
@@ -199,6 +216,6 @@ third-party-notices/
 |---|---|
 | SDK-style `.csproj` / `.fsproj` / `.vbproj` | `obj/project.assets.json` (requires `dotnet restore`) |
 | Classic .NET Framework `.csproj` | `packages.config` |
-| Native C++ `.vcxproj` | `packages.config` |
-| Solutions `.sln` / `.slnx` | All constituent projects |
+| Native C++ `.vcxproj` (NuGet packages only, not vcpkg) | `packages.config` |
+| Solutions `.sln` / `.slnx` / `.slnf` | All constituent projects (`.slnf` = filtered subset) |
 | Folder | Auto-discovers first `.sln` / `.slnx`, then `.csproj`, etc. |
