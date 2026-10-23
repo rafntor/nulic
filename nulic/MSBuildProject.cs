@@ -1,4 +1,5 @@
-﻿using System.Xml.Linq;
+﻿using System.Text.Json;
+using System.Xml.Linq;
 using Microsoft.Build.Construction;
 using Serilog;
 
@@ -52,7 +53,7 @@ internal class MSBuildProject
     }
     static void LoadFrom(DirectoryInfo dir, IList<MSBuildProject> list)
     {
-        string[] extensions = { "*.sln", "*.slnx", "*.csproj", "*.vbproj", "*.fsproj", "*.vcxproj" };
+        string[] extensions = { "*.slnf", "*.sln", "*.slnx", "*.csproj", "*.vbproj", "*.fsproj", "*.vcxproj" };
 
         foreach (var ext in extensions)
         {
@@ -83,6 +84,19 @@ internal class MSBuildProject
             {
                 var relPath = proj.Attribute("Path")?.Value;
                 if (relPath != null)
+                    LoadFrom(new FileInfo(Path.Join(file.DirectoryName, relPath)), list);
+            }
+        }
+        else if (string.Compare(file.Extension, ".slnf", true) == 0)
+        {
+            // .slnf is JSON: { "solution": { "path": "...", "projects": [ "...", ... ] } }
+            using var stream = file.OpenRead();
+            using var doc = JsonDocument.Parse(stream);
+            var projects = doc.RootElement.GetProperty("solution").GetProperty("projects");
+
+            foreach (var proj in projects.EnumerateArray())
+            {
+                if (proj.GetString() is string relPath)
                     LoadFrom(new FileInfo(Path.Join(file.DirectoryName, relPath)), list);
             }
         }

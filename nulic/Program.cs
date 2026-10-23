@@ -88,7 +88,8 @@ internal class Program
     }
     static async Task<int> Process(string path, LogEventLevel? logLevel = null, string[]? merges = null, string? outputFolder = null)
     {
-        var solutionDir = new DirectoryInfo(File.Exists(path) ? Path.GetDirectoryName(path)! : path);
+        var fullPath = Path.GetFullPath(path);
+        var solutionDir = new DirectoryInfo(File.Exists(fullPath) ? Path.GetDirectoryName(fullPath)! : fullPath);
         ProgramSettings.Load(solutionDir);
 
         var settings = ProgramSettings.Settings;
